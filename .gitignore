@@ -1,0 +1,15 @@
+# Derleme çıktıları
+target/
+*.class
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.classpath
+.project
+.settings/
+
+# İşletim sistemi
+.DS_Store
+Thumbs.db

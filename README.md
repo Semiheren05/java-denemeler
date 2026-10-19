@@ -23,7 +23,8 @@ mvn test
 
 | Gün | Konu | Klasör |
 |---|---|---|
-| 01 | Proje kurulumu, `BankaHesabi` (para yatırma/çekme, yetersiz bakiye) | `gun01` |
+| 01 | `BankaHesabi`: para yatırma/çekme, transfer, yetersiz bakiye için özel exception, işlem geçmişi; para için `BigDecimal` | [`gun01`](src/main/java/com/semih/gunluk/gun01) |
+| 02 | `KelimeSayaci`: `Map` ile kelime sayma, Türkçe büyük/küçük harf, noktalama ve kesme işareti temizliği, en sık N kelime | [`gun02`](src/main/java/com/semih/gunluk/gun02) |
 
 ## Lisans
 

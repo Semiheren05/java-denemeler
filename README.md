@@ -15,6 +15,7 @@ Her gün bir Java alıştırması. Her günün kodu kendi paketinde, birim testl
 |---|---|---|---|---|
 | 01 | Banka hesabı | `BigDecimal`, özel exception, `record`, `enum`, değiştirilemez liste | 14 | [`gun01`](src/main/java/com/semih/gunluk/gun01) |
 | 02 | Kelime sayacı | `Map.merge`, regex, Türkçe `Locale`, Streams ile sıralama | 15 | [`gun02`](src/main/java/com/semih/gunluk/gun02) |
+| 03 | Not analizi | Streams, `groupingBy`, `partitioningBy`, `Optional`, `EnumMap` | 16 | [`gun03`](src/main/java/com/semih/gunluk/gun03) |
 
 ---
 
@@ -74,16 +75,50 @@ sayac.enSikKelimeler("elma armut elma kiraz elma armut", 2);
 
 ---
 
+## Gün 03: NotAnalizi
+
+Bir sınıfın notlarından ortalama, en yüksek/en düşük, harf notu dağılımı ve bölüm ortalamaları çıkaran sınıf. Döngü yok, hepsi Streams API ile.
+
+```java
+NotAnalizi sinif = new NotAnalizi(List.of(
+        new Ogrenci("Ali", "Bilgisayar", 95),
+        new Ogrenci("Ayşe", "Bilgisayar", 88),
+        new Ogrenci("Deniz", "Elektrik", 58)));
+
+sinif.ortalama();              // OptionalDouble[80.33...]
+sinif.enYuksek();              // Optional[Ogrenci[ad=Ali, ...]]
+sinif.harfNotunaGoreGrupla();  // {AA=[Ali], BA=[Ayşe], FD=[Deniz]}
+sinif.gecenVeKalanlar();       // {false=[Deniz], true=[Ali, Ayşe]}
+```
+
+**Neler öğrendim:**
+- **Collectors:** `groupingBy` ile harf notuna ve bölüme göre gruplama, `mapping` ile gruptan sadece adları alma, `counting` ve `averagingInt` ile sayma ve ortalama, `partitioningBy` ile geçen/kalan diye ikiye ayırma.
+- **`Optional` ve `OptionalDouble`:** Boş sınıfın ortalaması ya da en yüksek notu yoktur. `null` veya 0 dönmek yerine "değer olmayabilir" bilgisini tipte taşıyorum.
+- **`EnumMap` ve `TreeMap`:** `groupingBy`'a hangi map'i kullanacağını vererek sonucu sıralı aldım: harf notları AA'dan FF'ye, bölümler alfabetik.
+- **Tekrar kullanılan `Comparator`:** Başarı sırası (puan azalan, eşitse ad) tek bir sabitte. `enYuksek`, `enDusuk` ve `ilkN` hep onu kullanıyor.
+- **`IntSummaryStatistics`:** En düşük, en yüksek, toplam, ortalama ve sayıyı listeyi bir kez gezerek veriyor.
+- **`record` doğrulaması:** `Ogrenci`'nin compact constructor'ı 0–100 dışındaki puanları ve boş adları daha nesne oluşmadan reddediyor.
+
+| Dosya | Görevi |
+|---|---|
+| `NotAnalizi` | Streams ile tüm istatistikler |
+| `Ogrenci` | Ad, bölüm, puan (`record`, doğrulamalı) |
+| `HarfNotu` | AA–FF harf notları ve alt sınırları (`enum`), DD ve üstü geçer |
+
+---
+
 ## Proje yapısı
 
 ```
 src/
 ├── main/java/com/semih/gunluk/
 │   ├── gun01/   BankaHesabi, YetersizBakiyeException, Islem, IslemTuru
-│   └── gun02/   KelimeSayaci, KelimeSayisi
+│   ├── gun02/   KelimeSayaci, KelimeSayisi
+│   └── gun03/   NotAnalizi, Ogrenci, HarfNotu
 └── test/java/com/semih/gunluk/
     ├── gun01/   BankaHesabiTest
-    └── gun02/   KelimeSayaciTest
+    ├── gun02/   KelimeSayaciTest
+    └── gun03/   NotAnaliziTest
 ```
 
 Her yeni gün `gunNN` adında yeni bir paket olarak ekleniyor.

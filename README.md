@@ -16,6 +16,7 @@ Her gün bir Java alıştırması. Her günün kodu kendi paketinde, birim testl
 | 01 | Banka hesabı | `BigDecimal`, özel exception, `record`, `enum`, değiştirilemez liste | 14 | [`gun01`](src/main/java/com/semih/gunluk/gun01) |
 | 02 | Kelime sayacı | `Map.merge`, regex, Türkçe `Locale`, Streams ile sıralama | 15 | [`gun02`](src/main/java/com/semih/gunluk/gun02) |
 | 03 | Not analizi | Streams, `groupingBy`, `partitioningBy`, `Optional`, `EnumMap` | 16 | [`gun03`](src/main/java/com/semih/gunluk/gun03) |
+| 04 | Şekiller | `sealed interface`, `record`, `switch` pattern matching, record pattern, `when` | 12 | [`gun04`](src/main/java/com/semih/gunluk/gun04) |
 
 ---
 
@@ -107,6 +108,47 @@ sinif.gecenVeKalanlar();       // {false=[Deniz], true=[Ali, Ayşe]}
 
 ---
 
+## Gün 04: Şekiller (Java 21)
+
+Daire, dikdörtgen, kare ve üçgenin alan ve çevresini Java 21'in yeni özellikleriyle hesaplayan küçük bir model.
+
+```java
+Sekil sekil = new Ucgen(3, 4, 5);
+
+SekilHesaplayici.alan(sekil);    // 6.0 (Heron formülü)
+SekilHesaplayici.cevre(sekil);   // 12.0
+SekilHesaplayici.tarif(sekil);   // "çeşitkenar üçgen"
+SekilHesaplayici.tanimla(null);  // "boş (null)"
+
+new Ucgen(1, 2, 10);             // IllegalArgumentException: bu kenarlarla üçgen olmaz
+```
+
+```java
+// default yok: Sekil sealed olduğu için derleyici tüm şekilleri biliyor
+return switch (sekil) {
+    case Daire(double r)                   -> 2 * Math.PI * r;
+    case Dikdortgen(double en, double boy) -> 2 * (en + boy);
+    case Kare(double kenar)                -> 4 * kenar;
+    case Ucgen(double a, double b, double c) -> a + b + c;
+};
+```
+
+**Neler öğrendim:**
+- **`sealed interface`:** `Sekil`'i sadece `permits` listesindeki dört tip uygulayabiliyor. Bu yüzden `switch`'te `default` gerekmiyor. Yeni bir şekil ekleyip bir `switch`'e eklemeyi unutursam kod **derlenmiyor**, hata çalışma zamanına kalmıyor.
+- **`switch` pattern matching:** `instanceof` ve cast zinciri yerine `case Daire d ->` ile tipe göre dallanma.
+- **Record pattern:** `case Dikdortgen(double en, double boy)` ile record'un alanları doğrudan değişkenlere açılıyor.
+- **`when` koşulları:** `case Ucgen u when u.eskenarMi()` gibi koşullu desenler. Java desenleri yukarıdan aşağı denediği için özel durumlar genelden önce yazılmalı.
+- **`case null`:** Java 21'de `null` da `switch` içinde ele alınabiliyor, ayrıca kontrol gerekmiyor.
+- **Doğrulamalı `record`:** Compact constructor'lar sıfır, negatif, `NaN` ve sonsuz ölçüleri, üçgen eşitsizliğini sağlamayan kenarları reddediyor.
+
+| Dosya | Görevi |
+|---|---|
+| `Sekil` | `sealed interface`, ortak doğrulama |
+| `Daire`, `Dikdortgen`, `Kare`, `Ucgen` | Şekiller (`record`) |
+| `SekilHesaplayici` | Alan, çevre, tarif ve tanımlama (`switch` desenleri) |
+
+---
+
 ## Proje yapısı
 
 ```
@@ -114,11 +156,13 @@ src/
 ├── main/java/com/semih/gunluk/
 │   ├── gun01/   BankaHesabi, YetersizBakiyeException, Islem, IslemTuru
 │   ├── gun02/   KelimeSayaci, KelimeSayisi
-│   └── gun03/   NotAnalizi, Ogrenci, HarfNotu
+│   ├── gun03/   NotAnalizi, Ogrenci, HarfNotu
+│   └── gun04/   Sekil, Daire, Dikdortgen, Kare, Ucgen, SekilHesaplayici
 └── test/java/com/semih/gunluk/
     ├── gun01/   BankaHesabiTest
     ├── gun02/   KelimeSayaciTest
-    └── gun03/   NotAnaliziTest
+    ├── gun03/   NotAnaliziTest
+    └── gun04/   SekilHesaplayiciTest
 ```
 
 Her yeni gün `gunNN` adında yeni bir paket olarak ekleniyor.

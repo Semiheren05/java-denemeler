@@ -17,6 +17,7 @@ Her gün bir Java alıştırması. Her günün kodu kendi paketinde, birim testl
 | 02 | Kelime sayacı | `Map.merge`, regex, Türkçe `Locale`, Streams ile sıralama | 15 | [`gun02`](src/main/java/com/semih/gunluk/gun02) |
 | 03 | Not analizi | Streams, `groupingBy`, `partitioningBy`, `Optional`, `EnumMap` | 16 | [`gun03`](src/main/java/com/semih/gunluk/gun03) |
 | 04 | Şekiller | `sealed interface`, `record`, `switch` pattern matching, record pattern, `when` | 12 | [`gun04`](src/main/java/com/semih/gunluk/gun04) |
+| 05 | Tipli koleksiyonlar | generics, sınırlı tip parametresi, wildcard, PECS, generic `record` | 12 | [`gun05`](src/main/java/com/semih/gunluk/gun05) |
 
 ---
 
@@ -149,6 +150,41 @@ return switch (sekil) {
 
 ---
 
+## Gün 05: SiraliListe (Generics)
+
+Her türlü karşılaştırılabilir tipi kabul eden, elemanlarını hep sıralı tutan bir liste ve birkaç generic yardımcı metot.
+
+```java
+SiraliListe<Integer> notlar = new SiraliListe<>();
+notlar.hepsiniEkle(List.of(70, 95, 40));
+notlar.ekle(85);
+notlar.listele();                        // [40, 70, 85, 95]
+notlar.enBuyuk();                        // Optional[95]
+
+new Cift<>("Semih", 25).tersCevir();     // Cift[birinci=25, ikinci=Semih]
+
+List<Number> sayilar = new ArrayList<>();
+GenelAraclar.kopyala(List.of(1, 2), sayilar);   // Integer listesi Number listesine yazılabiliyor
+GenelAraclar.ayir(List.of(1, 2, 3, 4), n -> n % 2 == 0);
+// Cift[birinci=[2, 4], ikinci=[1, 3]]
+```
+
+**Neler öğrendim:**
+- **Neden generics?** `List` yerine `List<Integer>` yazınca yanlış tipte eleman eklemek derleme hatası oluyor, okurken de cast gerekmiyor. Hata çalışma zamanından derleme zamanına taşınıyor.
+- **Sınırlı tip parametresi:** `SiraliListe<T extends Comparable<? super T>>` "sadece kendi arasında sıralanabilen tipler" demek. `Object` gibi sıralanamayan bir tiple liste oluşturmaya çalışınca kod derlenmiyor.
+- **PECS kuralı:** "Producer Extends, Consumer Super". Sadece okuduğum koleksiyon `? extends T`, sadece yazdığım koleksiyon `? super T`. Bu sayede `kopyala` bir `List<Integer>`'ı `List<Number>`'a aktarabiliyor.
+- **Generic metot:** `<T, R> List<R> donustur(...)` gibi tip parametresi sınıfta değil metotta da tanımlanabiliyor; derleyici tipleri argümanlardan çıkarıyor.
+- **İkili arama ile ekleme:** `Collections.binarySearch` bulamayınca `-(eklenecek yer) - 1` döndürüyor. Bunu kullanarak elemanı doğru yere koyuyorum, listeyi her seferinde baştan sıralamıyorum.
+- **Generic `record`:** `Cift<A, B>` iki farklı tipi taşıyabiliyor; `tersCevir` dönüş tipini de `Cift<B, A>` olarak çeviriyor.
+
+| Dosya | Görevi |
+|---|---|
+| `SiraliListe` | Her zaman sıralı, tipli liste (`Iterable`) |
+| `Cift` | İki değerlik generic `record` |
+| `GenelAraclar` | `enBuyuk`, `kopyala`, `donustur`, `ayir` generic metotları |
+
+---
+
 ## Proje yapısı
 
 ```
@@ -157,12 +193,14 @@ src/
 │   ├── gun01/   BankaHesabi, YetersizBakiyeException, Islem, IslemTuru
 │   ├── gun02/   KelimeSayaci, KelimeSayisi
 │   ├── gun03/   NotAnalizi, Ogrenci, HarfNotu
-│   └── gun04/   Sekil, Daire, Dikdortgen, Kare, Ucgen, SekilHesaplayici
+│   ├── gun04/   Sekil, Daire, Dikdortgen, Kare, Ucgen, SekilHesaplayici
+│   └── gun05/   SiraliListe, Cift, GenelAraclar
 └── test/java/com/semih/gunluk/
     ├── gun01/   BankaHesabiTest
     ├── gun02/   KelimeSayaciTest
     ├── gun03/   NotAnaliziTest
-    └── gun04/   SekilHesaplayiciTest
+    ├── gun04/   SekilHesaplayiciTest
+    └── gun05/   SiraliListeTest
 ```
 
 Her yeni gün `gunNN` adında yeni bir paket olarak ekleniyor.

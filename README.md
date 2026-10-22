@@ -19,6 +19,7 @@ Her gün bir Java alıştırması. Her günün kodu kendi paketinde, birim testl
 | 04 | Şekiller | `sealed interface`, `record`, `switch` pattern matching, record pattern, `when` | 12 | [`gun04`](src/main/java/com/semih/gunluk/gun04) |
 | 05 | Tipli koleksiyonlar | generics, sınırlı tip parametresi, wildcard, PECS, generic `record` | 12 | [`gun05`](src/main/java/com/semih/gunluk/gun05) |
 | 06 | Kargo ücreti | strateji deseni, `@FunctionalInterface`, lambda, sarmalayan strateji, açık/kapalı prensibi | 13 | [`gun06`](src/main/java/com/semih/gunluk/gun06) |
+| 07 | Kitap kataloğu | `equals`/`hashCode` sözleşmesi, `Comparable`, `Comparator`, `HashSet`/`TreeSet`, Türkçe `Collator` | 12 | [`gun07`](src/main/java/com/semih/gunluk/gun07) |
 
 ---
 
@@ -222,6 +223,38 @@ hesaplayici.firmaEkle("Km başı", g -> BigDecimal.valueOf(g.mesafeKm()).multipl
 
 ---
 
+## Gün 07: Katalog (`equals`, `hashCode`, `Comparable`)
+
+Aynı kitabı iki kez kabul etmeyen, kitapları başlığa, yıla ve yazara göre sıralayabilen bir katalog. Kitabın kimliği ISBN.
+
+```java
+Kitap a = new Kitap("978-975-0000-01-1", "Çalıkuşu", "Reşat Nuri Güntekin", 1922);
+Kitap b = new Kitap("9789750000011", "Çalıkuşu (yeni baskı)", "R. N. Güntekin", 2020);
+
+a.equals(b);                          // true: ISBN aynı
+Katalog katalog = new Katalog();
+katalog.ekle(a);                      // true
+katalog.ekle(b);                      // false, bu kitap zaten var
+
+katalog.sirala(Kitap.BASLIGA_GORE);   // Türkçe alfabeyle: Cevdet Bey..., Çalıkuşu, Dokuzuncu...
+katalog.yazaraGore();                 // yazarlar alfabetik, her yazarın kitapları yıla göre
+```
+
+**Neler öğrendim:**
+- **`equals` ve `hashCode` birlikte yazılır:** `HashSet` önce `hashCode` ile kovayı buluyor, sonra `equals` ile karşılaştırıyor. Testte sadece `equals` yazılmış bir sınıfla aynı kitabın sete **iki kez** girdiğini gösterdim.
+- **Neden `record` değil?** `record` eşitliği tüm alanlardan hesaplıyor. Burada eşitlik sadece ISBN'e bağlı olduğu için sınıfı ve `equals`/`hashCode`'u kendim yazdım.
+- **`Comparable` ile `equals` tutarlı olmalı:** Doğal sıralamayı da ISBN'e göre yaptım. Başlığa göre yapsaydım aynı başlıklı iki farklı kitabı `TreeSet` "aynı" sayıp birini atardı.
+- **Birden fazla sıralama:** Doğal sıralama tek, ama `BASLIGA_GORE` ve `YILA_GORE` gibi istediğim kadar `Comparator` sabiti tanımlayabiliyorum.
+- **Türkçe alfabe:** `String.compareTo` harfleri Unicode koduna göre sıralıyor, "Ç"yi "Z"den sonraya atıyor. `Collator` (`tr-TR`) ile "Ç" doğru yerine, "C" ile "D" arasına geliyor.
+- **ISBN normalleştirme:** Tireli ve tiresiz yazılan ISBN'ler aynı kitabı gösteriyor; kimlik değeri constructor'da tek biçime çevriliyor.
+
+| Dosya | Görevi |
+|---|---|
+| `Kitap` | ISBN kimlikli kitap: `equals`, `hashCode`, `compareTo`, sıralama sabitleri |
+| `Katalog` | `HashSet` ile tekrarsız katalog, arama, sıralama, yazara göre gruplama |
+
+---
+
 ## Proje yapısı
 
 ```
@@ -232,14 +265,16 @@ src/
 │   ├── gun03/   NotAnalizi, Ogrenci, HarfNotu
 │   ├── gun04/   Sekil, Daire, Dikdortgen, Kare, Ucgen, SekilHesaplayici
 │   ├── gun05/   SiraliListe, Cift, GenelAraclar
-│   └── gun06/   Gonderi, KargoUcretStratejisi, KargoStratejileri, KargoHesaplayici, Teklif
+│   ├── gun06/   Gonderi, KargoUcretStratejisi, KargoStratejileri, KargoHesaplayici, Teklif
+│   └── gun07/   Kitap, Katalog
 └── test/java/com/semih/gunluk/
     ├── gun01/   BankaHesabiTest
     ├── gun02/   KelimeSayaciTest
     ├── gun03/   NotAnaliziTest
     ├── gun04/   SekilHesaplayiciTest
     ├── gun05/   SiraliListeTest
-    └── gun06/   KargoHesaplayiciTest
+    ├── gun06/   KargoHesaplayiciTest
+    └── gun07/   KatalogTest
 ```
 
 Her yeni gün `gunNN` adında yeni bir paket olarak ekleniyor.

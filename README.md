@@ -18,6 +18,7 @@ Her gün bir Java alıştırması. Her günün kodu kendi paketinde, birim testl
 | 03 | Not analizi | Streams, `groupingBy`, `partitioningBy`, `Optional`, `EnumMap` | 16 | [`gun03`](src/main/java/com/semih/gunluk/gun03) |
 | 04 | Şekiller | `sealed interface`, `record`, `switch` pattern matching, record pattern, `when` | 12 | [`gun04`](src/main/java/com/semih/gunluk/gun04) |
 | 05 | Tipli koleksiyonlar | generics, sınırlı tip parametresi, wildcard, PECS, generic `record` | 12 | [`gun05`](src/main/java/com/semih/gunluk/gun05) |
+| 06 | Kargo ücreti | strateji deseni, `@FunctionalInterface`, lambda, sarmalayan strateji, açık/kapalı prensibi | 13 | [`gun06`](src/main/java/com/semih/gunluk/gun06) |
 
 ---
 
@@ -185,6 +186,42 @@ GenelAraclar.ayir(List.of(1, 2, 3, 4), n -> n % 2 == 0);
 
 ---
 
+## Gün 06: KargoHesaplayici (Strateji deseni)
+
+Farklı kargo firmalarının ücretini hesaplayan ve en ucuz teklifi bulan bir hesaplayıcı. Her firmanın hesaplama yolu bir "strateji".
+
+```java
+KargoHesaplayici hesaplayici = new KargoHesaplayici();
+hesaplayici.firmaEkle("Standart", KargoStratejileri.standart());   // 30 TL + kg başı 5 TL
+hesaplayici.firmaEkle("Hızlı", KargoStratejileri.hizli());         // 50 TL + kg başı 8 TL (+20 TL uzak mesafe)
+hesaplayici.firmaEkle("Kampanya",
+        KargoStratejileri.ucretsizEsigi(new BigDecimal("300"), KargoStratejileri.standart()));
+
+Gonderi paket = new Gonderi(2, 100, new BigDecimal("350"));
+hesaplayici.enUcuz(paket);   // Optional[Teklif[firma=Kampanya, ucret=0.00]]
+
+// Yeni bir strateji için sınıf yazmak şart değil, lambda yeterli
+hesaplayici.firmaEkle("Km başı", g -> BigDecimal.valueOf(g.mesafeKm()).multiply(new BigDecimal("0.10")));
+```
+
+**Neler öğrendim:**
+- **Strateji deseni:** "Ücret nasıl hesaplanır?" sorusunu bir arayüzün arkasına koydum. `KargoHesaplayici`'nın içinde hiç `if (firma.equals(...))` yok; yeni firma eklemek mevcut kodu değiştirmiyor (açık/kapalı prensibi).
+- **`@FunctionalInterface`:** Tek soyut metodu olan arayüz. Derleyici ikinci bir metot eklenirse hata veriyor ve arayüzü lambda ya da metot referansıyla doldurabiliyorum.
+- **Stratejiyi döndüren fabrika metotları:** `KargoStratejileri.standart()` bir sınıf değil, bir lambda döndürüyor. Kod kısa kalıyor ama her strateji yine ayrı ayrı test edilebiliyor.
+- **Sarmalayan strateji:** `ucretsizEsigi` başka bir stratejiyi alıp üstüne "sepet eşiği geçerse bedava" davranışı ekliyor. Asıl stratejiye dokunmadan yeni kural eklemenin yolu (decorator fikri).
+- **İki aşamalı sıralama:** Teklifler `Comparator.comparing(Teklif::ucret).thenComparing(Teklif::firma)` ile sıralanıyor; eşit fiyatlı firmalar her seferinde aynı sırada geliyor.
+- **`LinkedHashMap` ve `putIfAbsent`:** Firmalar eklenme sırasını koruyor, aynı ada ikinci kayıt tek satırda reddediliyor.
+
+| Dosya | Görevi |
+|---|---|
+| `KargoUcretStratejisi` | Strateji arayüzü (`@FunctionalInterface`) |
+| `KargoStratejileri` | Hazır stratejiler: standart, hızlı, sabit, ücretsiz kargo eşiği |
+| `KargoHesaplayici` | Firmaları tutar, teklif ve en ucuzu bulur |
+| `Gonderi` | Ağırlık, mesafe, sepet tutarı (`record`, doğrulamalı) |
+| `Teklif` | Firma ve ücret (`record`) |
+
+---
+
 ## Proje yapısı
 
 ```
@@ -194,13 +231,15 @@ src/
 │   ├── gun02/   KelimeSayaci, KelimeSayisi
 │   ├── gun03/   NotAnalizi, Ogrenci, HarfNotu
 │   ├── gun04/   Sekil, Daire, Dikdortgen, Kare, Ucgen, SekilHesaplayici
-│   └── gun05/   SiraliListe, Cift, GenelAraclar
+│   ├── gun05/   SiraliListe, Cift, GenelAraclar
+│   └── gun06/   Gonderi, KargoUcretStratejisi, KargoStratejileri, KargoHesaplayici, Teklif
 └── test/java/com/semih/gunluk/
     ├── gun01/   BankaHesabiTest
     ├── gun02/   KelimeSayaciTest
     ├── gun03/   NotAnaliziTest
     ├── gun04/   SekilHesaplayiciTest
-    └── gun05/   SiraliListeTest
+    ├── gun05/   SiraliListeTest
+    └── gun06/   KargoHesaplayiciTest
 ```
 
 Her yeni gün `gunNN` adında yeni bir paket olarak ekleniyor.

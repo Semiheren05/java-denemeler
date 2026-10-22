@@ -20,6 +20,7 @@ Her gün bir Java alıştırması. Her günün kodu kendi paketinde, birim testl
 | 05 | Tipli koleksiyonlar | generics, sınırlı tip parametresi, wildcard, PECS, generic `record` | 12 | [`gun05`](src/main/java/com/semih/gunluk/gun05) |
 | 06 | Kargo ücreti | strateji deseni, `@FunctionalInterface`, lambda, sarmalayan strateji, açık/kapalı prensibi | 13 | [`gun06`](src/main/java/com/semih/gunluk/gun06) |
 | 07 | Kitap kataloğu | `equals`/`hashCode` sözleşmesi, `Comparable`, `Comparator`, `HashSet`/`TreeSet`, Türkçe `Collator` | 12 | [`gun07`](src/main/java/com/semih/gunluk/gun07) |
+| 08 | CSV ürün okuyucu | checked/unchecked exception, özel exception ve `cause`, try-with-resources, `java.nio.file`, `@TempDir` | 9 | [`gun08`](src/main/java/com/semih/gunluk/gun08) |
 
 ---
 
@@ -255,6 +256,47 @@ katalog.yazaraGore();                 // yazarlar alfabetik, her yazarın kitapl
 
 ---
 
+## Gün 08: UrunCsvOkuyucu (Exception tasarımı ve dosya okuma)
+
+Noktalı virgülle ayrılmış bir ürün dosyasını okuyan sınıf. Bozuk satırlar yüzünden bütün dosya çöpe gitmiyor: geçerli ürünler alınıyor, hatalı satırlar numarasıyla raporlanıyor.
+
+```
+kod;ad;fiyat;stok
+U001;Kalem;12,50;100
+U002;Defter;bedava;20
+U003;Silgi;5
+```
+
+```java
+try {
+    OkumaSonucu sonuc = UrunCsvOkuyucu.oku(Path.of("urunler.csv"));
+    sonuc.urunler();   // [Urun[kod=U001, ad=Kalem, fiyat=12.50, stok=100]]
+    sonuc.hatalar();   // [HataliSatir[satirNo=3, ..., neden=Fiyat sayı değil: 'bedava'],
+                       //  HataliSatir[satirNo=4, ..., neden=4 sütun bekleniyordu, 3 bulundu]]
+} catch (DosyaOkunamadiException e) {
+    // dosya yok, okunamıyor ya da başlık satırı yanlış
+}
+```
+
+**Neler öğrendim:**
+- **İki tür hata, iki farklı tepki:** Dosyanın kendisi okunamıyorsa devam etmenin anlamı yok, exception fırlatılıyor. Tek bir satır bozuksa o satır atlanıp raporlanıyor.
+- **Checked mi, unchecked mı?** Dosya sistemi programın kontrolünde olmadığı için `DosyaOkunamadiException`'ı checked yaptım; çağıran kod onu yakalamak zorunda. Bozuk veri ise programcı hatası değil ama kurtarılabilir, onu `IllegalArgumentException` olarak içeride yakalayıp `HataliSatir`'a çeviriyorum.
+- **Exception zinciri:** Asıl `IOException` yeni exception'a `cause` olarak veriliyor. Hata mesajı daha anlaşılır olurken orijinal bilgi kaybolmuyor (`hata.getCause()`).
+- **try-with-resources:** `BufferedReader` `try (...)` içinde açıldığı için hata olsa da olmasa da kapatılıyor; `finally` bloğu yazmaya gerek yok.
+- **`java.nio.file`:** `Files.newBufferedReader(path, UTF_8)` ile Türkçe karakterler bozulmadan okunuyor; dosya yoksa özel olarak `NoSuchFileException` geliyor.
+- **Sonuç tipi:** `OkumaSonucu` hem ürünleri hem hataları taşıyan bir `record`. Hatalar exception olarak yukarı fırlamıyor, veri olarak dönüyor.
+- **`@TempDir` ve `@CsvSource`:** Testlerde JUnit her test için geçici bir klasör açıp siliyor. Hatalı satır senaryolarını tek bir tabloda topladım.
+
+| Dosya | Görevi |
+|---|---|
+| `UrunCsvOkuyucu` | Dosyayı okur, satırları çözer, hataları toplar |
+| `Urun` | Kod, ad, fiyat, stok (`record`, doğrulamalı) |
+| `OkumaSonucu` | Geçerli ürünler ve hatalı satırlar (`record`) |
+| `HataliSatir` | Satır numarası, içerik ve neden (`record`) |
+| `DosyaOkunamadiException` | Dosya düzeyindeki hatalar için checked exception |
+
+---
+
 ## Proje yapısı
 
 ```
@@ -266,7 +308,8 @@ src/
 │   ├── gun04/   Sekil, Daire, Dikdortgen, Kare, Ucgen, SekilHesaplayici
 │   ├── gun05/   SiraliListe, Cift, GenelAraclar
 │   ├── gun06/   Gonderi, KargoUcretStratejisi, KargoStratejileri, KargoHesaplayici, Teklif
-│   └── gun07/   Kitap, Katalog
+│   ├── gun07/   Kitap, Katalog
+│   └── gun08/   UrunCsvOkuyucu, Urun, OkumaSonucu, HataliSatir, DosyaOkunamadiException
 └── test/java/com/semih/gunluk/
     ├── gun01/   BankaHesabiTest
     ├── gun02/   KelimeSayaciTest
@@ -274,7 +317,8 @@ src/
     ├── gun04/   SekilHesaplayiciTest
     ├── gun05/   SiraliListeTest
     ├── gun06/   KargoHesaplayiciTest
-    └── gun07/   KatalogTest
+    ├── gun07/   KatalogTest
+    └── gun08/   UrunCsvOkuyucuTest
 ```
 
 Her yeni gün `gunNN` adında yeni bir paket olarak ekleniyor.

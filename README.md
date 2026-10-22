@@ -21,6 +21,7 @@ Her gün bir Java alıştırması. Her günün kodu kendi paketinde, birim testl
 | 06 | Kargo ücreti | strateji deseni, `@FunctionalInterface`, lambda, sarmalayan strateji, açık/kapalı prensibi | 13 | [`gun06`](src/main/java/com/semih/gunluk/gun06) |
 | 07 | Kitap kataloğu | `equals`/`hashCode` sözleşmesi, `Comparable`, `Comparator`, `HashSet`/`TreeSet`, Türkçe `Collator` | 12 | [`gun07`](src/main/java/com/semih/gunluk/gun07) |
 | 08 | CSV ürün okuyucu | checked/unchecked exception, özel exception ve `cause`, try-with-resources, `java.nio.file`, `@TempDir` | 9 | [`gun08`](src/main/java/com/semih/gunluk/gun08) |
+| 09 | Randevu defteri | `java.time` (`LocalDateTime`, `Duration`, `DayOfWeek`), `Clock` ile test edilebilir zaman, aralık çakışması | 14 | [`gun09`](src/main/java/com/semih/gunluk/gun09) |
 
 ---
 
@@ -297,6 +298,40 @@ try {
 
 ---
 
+## Gün 09: RandevuDefteri (`java.time`)
+
+Bir kuaförün randevu defteri: mesai 09:00–18:00, pazar kapalı, çakışan randevu alınmıyor, gün içindeki boş saatler listelenebiliyor.
+
+```java
+RandevuDefteri defter = new RandevuDefteri(Clock.system(ZoneId.of("Europe/Istanbul")));
+LocalDate cuma = LocalDate.of(2026, 10, 23);
+
+defter.ekle(new Randevu("Ayşe", cuma.atTime(9, 0), Duration.ofMinutes(60)));
+defter.ekle(new Randevu("Ali", cuma.atTime(12, 0), Duration.ofMinutes(30)));
+defter.ekle(new Randevu("Semih", cuma.atTime(12, 15), Duration.ofMinutes(30)));
+// CakismaException: Bu saatte başka bir randevu var: Ali, 12:00–12:30
+
+defter.bosAraliklar(cuma, Duration.ofMinutes(30));
+// [BosAralik[baslangic=10:00, bitis=12:00], BosAralik[baslangic=12:30, bitis=18:00]]
+```
+
+**Neler öğrendim:**
+- **Doğru tipi seçmek:** Tarih için `LocalDate`, saat için `LocalTime`, ikisi birlikte `LocalDateTime`, süre için `Duration`. Eski `Date` sınıfı yerine hepsi değiştirilemez ve anlaşılır.
+- **`Clock` ile test edilebilir zaman:** `LocalDateTime.now()` her çalıştırmada farklı sonuç verdiği için "geçmiş zamana randevu alınamaz" kuralını test etmek zor. Sınıf saati dışarıdan alıyor, testte `Clock.fixed(...)` ile zamanı donduruyorum.
+- **Saat dilimi:** `Clock`'a `Europe/Istanbul` veriliyor. Sabit saat UTC `07:00` olarak yazılıp İstanbul'da `10:00` olarak okunuyor.
+- **Aralık çakışması:** İki aralık, biri diğeri bitmeden başlıyorsa çakışır: `a.bas < b.bitis && b.bas < a.bitis`. Uç uca eklenen randevular (biri 10:00'da biterken öteki 10:00'da başlıyor) çakışmıyor.
+- **Gece yarısı tuzağı:** 23:30'da başlayan 1 saatlik randevunun `toLocalTime()` ile bitişi `00:30` görünüyor ve mesai içinde sanılıyor. Önce bitişin aynı günde olduğunu kontrol ediyorum.
+- **Hesaplanan alan:** `Randevu` bitiş saatini saklamıyor, `baslangic + sure` olarak hesaplıyor; iki değer hiçbir zaman birbiriyle çelişemiyor.
+
+| Dosya | Görevi |
+|---|---|
+| `RandevuDefteri` | Kurallar, çakışma kontrolü, boş aralıklar, sıradaki randevu |
+| `Randevu` | Müşteri, başlangıç, süre (`record`, doğrulamalı) |
+| `BosAralik` | Gün içinde boş zaman dilimi (`record`) |
+| `CakismaException` | Çakışan randevuyu taşıyan hata |
+
+---
+
 ## Proje yapısı
 
 ```
@@ -309,7 +344,8 @@ src/
 │   ├── gun05/   SiraliListe, Cift, GenelAraclar
 │   ├── gun06/   Gonderi, KargoUcretStratejisi, KargoStratejileri, KargoHesaplayici, Teklif
 │   ├── gun07/   Kitap, Katalog
-│   └── gun08/   UrunCsvOkuyucu, Urun, OkumaSonucu, HataliSatir, DosyaOkunamadiException
+│   ├── gun08/   UrunCsvOkuyucu, Urun, OkumaSonucu, HataliSatir, DosyaOkunamadiException
+│   └── gun09/   RandevuDefteri, Randevu, BosAralik, CakismaException
 └── test/java/com/semih/gunluk/
     ├── gun01/   BankaHesabiTest
     ├── gun02/   KelimeSayaciTest
@@ -318,7 +354,8 @@ src/
     ├── gun05/   SiraliListeTest
     ├── gun06/   KargoHesaplayiciTest
     ├── gun07/   KatalogTest
-    └── gun08/   UrunCsvOkuyucuTest
+    ├── gun08/   UrunCsvOkuyucuTest
+    └── gun09/   RandevuDefteriTest
 ```
 
 Her yeni gün `gunNN` adında yeni bir paket olarak ekleniyor.

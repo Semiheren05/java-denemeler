@@ -22,6 +22,7 @@ Her gün bir Java alıştırması. Her günün kodu kendi paketinde, birim testl
 | 07 | Kitap kataloğu | `equals`/`hashCode` sözleşmesi, `Comparable`, `Comparator`, `HashSet`/`TreeSet`, Türkçe `Collator` | 12 | [`gun07`](src/main/java/com/semih/gunluk/gun07) |
 | 08 | CSV ürün okuyucu | checked/unchecked exception, özel exception ve `cause`, try-with-resources, `java.nio.file`, `@TempDir` | 9 | [`gun08`](src/main/java/com/semih/gunluk/gun08) |
 | 09 | Randevu defteri | `java.time` (`LocalDateTime`, `Duration`, `DayOfWeek`), `Clock` ile test edilebilir zaman, aralık çakışması | 14 | [`gun09`](src/main/java/com/semih/gunluk/gun09) |
+| 10 | Fatura | Builder deseni, değiştirilemez sınıf, savunmacı kopya, `toBuilder`, `EnumMap`, `BigDecimal` yuvarlama | 12 | [`gun10`](src/main/java/com/semih/gunluk/gun10) |
 
 ---
 
@@ -332,6 +333,47 @@ defter.bosAraliklar(cuma, Duration.ofMinutes(30));
 
 ---
 
+## Gün 10: Fatura (Builder ve değiştirilemez nesneler)
+
+Bir satış faturası: kalemler, KDV oranları ve indirim. Fatura bir kez oluşturulduktan sonra hiçbir alanı değişmiyor; değişiklik gerekiyorsa yeni bir fatura üretiliyor.
+
+```java
+Fatura fatura = Fatura.builder()
+        .no("SE-2026-0042")
+        .musteri("Ayşe Yılmaz")
+        .tarih(LocalDate.of(2026, 10, 26))
+        .kalem("Klavye", "750.00", 2, KdvOrani.YUZDE_20)
+        .kalem("Java kitabı", "450.00", 1, KdvOrani.YUZDE_10)
+        .indirim(10)
+        .build();
+
+fatura.araToplam();     // 1950.00
+fatura.indirimTutari(); // 195.00
+fatura.kdvDokumu();     // {YUZDE_10=40.50, YUZDE_20=270.00}
+fatura.genelToplam();   // 2065.50
+
+Fatura yeni = fatura.toBuilder().indirim(20).build();
+yeni.genelToplam();     // 1836.00
+fatura.genelToplam();   // 2065.50, asıl fatura değişmedi
+fatura.kalemler().add(...);   // UnsupportedOperationException
+```
+
+**Neler öğrendim:**
+- **Neden Builder?** Beş-altı parametreli bir constructor'da `new Fatura("42", "Ayşe", tarih, kalemler, 10)` gibi bir çağrıda hangi değerin ne olduğu okunmuyor, sırası da kolayca karışıyor. `.musteri(...).indirim(10)` her değeri adıyla veriyor; isteğe bağlı alanlar (indirim, tarih) hiç yazılmayabiliyor.
+- **Kurallar tek yerde:** Zorunlu alanlar `build()` içinde kontrol ediliyor. Numarası ya da kalemi olmayan yarım bir fatura hiç oluşamıyor.
+- **Değiştirilemez sınıf:** Sınıf `final`, alanlar `final`, setter yok, constructor `private`. Böyle bir nesne thread'ler arasında güvenle paylaşılabiliyor ve "bunu kim değiştirdi?" sorusu hiç çıkmıyor.
+- **Savunmacı kopya:** Kalemler `List.copyOf` ile kopyalanıp saklanıyor. Builder'a `build()`'den sonra eklenen kalem faturayı etkilemiyor; dışarıya verilen liste de salt okunur.
+- **`toBuilder`:** Değiştirilemez nesnede "indirimi değiştir" demek, mevcut faturadan başlayıp yenisini üretmek demek.
+- **Kuruş hesabı:** Önce her KDV oranının matrahına indirim uygulanıyor, sonra KDV hesaplanıyor; her adım `RoundingMode.HALF_UP` ile iki haneye yuvarlanıyor. Böylece dökümdeki satırlar toplamla kuruşu kuruşuna eşit çıkıyor.
+
+| Dosya | Görevi |
+|---|---|
+| `Fatura` | Değiştirilemez fatura, hesaplar ve iç `Builder` sınıfı |
+| `FaturaKalemi` | Ürün, birim fiyat, adet, KDV oranı (`record`, doğrulamalı) |
+| `KdvOrani` | %1, %10, %20 (`enum`) |
+
+---
+
 ## Proje yapısı
 
 ```
@@ -345,7 +387,8 @@ src/
 │   ├── gun06/   Gonderi, KargoUcretStratejisi, KargoStratejileri, KargoHesaplayici, Teklif
 │   ├── gun07/   Kitap, Katalog
 │   ├── gun08/   UrunCsvOkuyucu, Urun, OkumaSonucu, HataliSatir, DosyaOkunamadiException
-│   └── gun09/   RandevuDefteri, Randevu, BosAralik, CakismaException
+│   ├── gun09/   RandevuDefteri, Randevu, BosAralik, CakismaException
+│   └── gun10/   Fatura, FaturaKalemi, KdvOrani
 └── test/java/com/semih/gunluk/
     ├── gun01/   BankaHesabiTest
     ├── gun02/   KelimeSayaciTest
@@ -355,7 +398,8 @@ src/
     ├── gun06/   KargoHesaplayiciTest
     ├── gun07/   KatalogTest
     ├── gun08/   UrunCsvOkuyucuTest
-    └── gun09/   RandevuDefteriTest
+    ├── gun09/   RandevuDefteriTest
+    └── gun10/   FaturaTest
 ```
 
 Her yeni gün `gunNN` adında yeni bir paket olarak ekleniyor.

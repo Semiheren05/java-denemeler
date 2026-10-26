@@ -24,6 +24,7 @@ Her gün bir Java alıştırması. Her günün kodu kendi paketinde, birim testl
 | 09 | Randevu defteri | `java.time` (`LocalDateTime`, `Duration`, `DayOfWeek`), `Clock` ile test edilebilir zaman, aralık çakışması | 14 | [`gun09`](src/main/java/com/semih/gunluk/gun09) |
 | 10 | Fatura | Builder deseni, değiştirilemez sınıf, savunmacı kopya, `toBuilder`, `EnumMap`, `BigDecimal` yuvarlama | 12 | [`gun10`](src/main/java/com/semih/gunluk/gun10) |
 | 11 | Metin editörü | `Deque` ile iki yığın, geri al / ileri al, `ArrayDeque` vs `Stack`, sınırlı geçmiş, `sealed` + kendi tersini bilen işlemler | 12 | [`gun11`](src/main/java/com/semih/gunluk/gun11) |
+| 12 | Satış analizi | ikili arama, iki işaretçi, sabit ve değişken kayan pencere, Big-O, kaba kuvvetle karşılaştırmalı rastgele testler | 11 | [`gun12`](src/main/java/com/semih/gunluk/gun12) |
 
 ---
 
@@ -411,6 +412,43 @@ editor.ileriAl();     // "Java güzel"
 
 ---
 
+## Gün 12: SatisAnalizi (Algoritmalar ve Big-O)
+
+Bir e-ticaret sitesinin fiyat ve satış verileri üzerinde, mülakatlarda en sık çıkan üç teknik. Fiyatlar kuruş cinsinden.
+
+```java
+int[] fiyatlar = {1999, 4500, 4500, 12990, 34900};            // sıralı
+SatisAnalizi.butceyeUyanEnPahali(fiyatlar, 5000);              // 2 (ikinci 4500)
+
+SatisAnalizi.hedefToplamliCift(new int[] {1500, 2500, 4000, 6000, 8500}, 10000);
+// Optional[FiyatCifti[birinciIndeks=0, ikinciIndeks=4, birinciFiyat=1500, ikinciFiyat=8500]]
+
+int[] satislar = {120, 340, 90, 410, 560, 30, 700};
+SatisAnalizi.enIyiDonemSatisi(satislar, 3);    // 1290 (son üç gün)
+SatisAnalizi.hedefeEnKisaSure(satislar, 1000); // 3 (410 + 560 + 30)
+```
+
+| Soru | Kaba kuvvet | Buradaki çözüm | Teknik |
+|---|---|---|---|
+| Bütçeye uyan en pahalı ürün | O(n) | O(log n) | İkili arama |
+| Toplamı hedefi tutan iki ürün | O(n²) | O(n) | İki işaretçi |
+| En iyi k günlük satış | O(n·k) | O(n) | Sabit kayan pencere |
+| Hedefe ulaşan en kısa dönem | O(n²) | O(n) | Değişken kayan pencere |
+
+**Neler öğrendim:**
+- **İkili arama** her adımda aralığın yarısını eliyor; 1 milyon fiyatta en fazla 20 adım. Ortayı `sol + (sag - sol) / 2` ile buluyorum, `(sol + sag) / 2` çok büyük dizilerde `int` taşmasına yol açabilir. "Uyan bulundu ama daha iyisi sağda olabilir" diye aramaya devam etmek, aynı fiyattan birden fazla olduğunda en sağdakini veriyor.
+- **İki işaretçi** sıralı olmaya dayanıyor: toplam küçükse onu büyütmenin tek yolu soldakini sağa kaydırmak, büyükse sağdakini sola. Her adımda bir işaretçi ilerlediği için toplam en fazla n adım.
+- **Kayan pencere:** Bir sonraki pencerenin toplamını baştan toplamak yerine giren günü ekleyip çıkan günü çıkarıyorum; her pencere O(1).
+- **Değişken pencere** sadece negatif olmayan sayılarda çalışıyor: pencereyi daraltmak toplamı hiç büyütmemeli. Bu yüzden negatif satış reddediliyor.
+- **Kaba kuvvetle karşılaştırma:** Hızlı çözümleri, yavaş ama açıkça doğru O(n²) çözümlerle yüzlerce rastgele dizi üzerinde karşılaştıran testler var. Sabit tohumlu (`new Random(42)`) olduğu için her çalıştırmada aynı diziler üretiliyor, hata çıkarsa tekrar edilebiliyor.
+
+| Dosya | Görevi |
+|---|---|
+| `SatisAnalizi` | Dört algoritma (`static` metotlar) |
+| `FiyatCifti` | Bulunan iki ürün ve indeksleri (`record`) |
+
+---
+
 ## Proje yapısı
 
 ```
@@ -426,7 +464,8 @@ src/
 │   ├── gun08/   UrunCsvOkuyucu, Urun, OkumaSonucu, HataliSatir, DosyaOkunamadiException
 │   ├── gun09/   RandevuDefteri, Randevu, BosAralik, CakismaException
 │   ├── gun10/   Fatura, FaturaKalemi, KdvOrani
-│   └── gun11/   MetinEditoru, Duzenleme
+│   ├── gun11/   MetinEditoru, Duzenleme
+│   └── gun12/   SatisAnalizi, FiyatCifti
 └── test/java/com/semih/gunluk/
     ├── gun01/   BankaHesabiTest
     ├── gun02/   KelimeSayaciTest
@@ -438,7 +477,8 @@ src/
     ├── gun08/   UrunCsvOkuyucuTest
     ├── gun09/   RandevuDefteriTest
     ├── gun10/   FaturaTest
-    └── gun11/   MetinEditoruTest
+    ├── gun11/   MetinEditoruTest
+    └── gun12/   SatisAnaliziTest
 ```
 
 Her yeni gün `gunNN` adında yeni bir paket olarak ekleniyor.

@@ -23,6 +23,7 @@ Her gün bir Java alıştırması. Her günün kodu kendi paketinde, birim testl
 | 08 | CSV ürün okuyucu | checked/unchecked exception, özel exception ve `cause`, try-with-resources, `java.nio.file`, `@TempDir` | 9 | [`gun08`](src/main/java/com/semih/gunluk/gun08) |
 | 09 | Randevu defteri | `java.time` (`LocalDateTime`, `Duration`, `DayOfWeek`), `Clock` ile test edilebilir zaman, aralık çakışması | 14 | [`gun09`](src/main/java/com/semih/gunluk/gun09) |
 | 10 | Fatura | Builder deseni, değiştirilemez sınıf, savunmacı kopya, `toBuilder`, `EnumMap`, `BigDecimal` yuvarlama | 12 | [`gun10`](src/main/java/com/semih/gunluk/gun10) |
+| 11 | Metin editörü | `Deque` ile iki yığın, geri al / ileri al, `ArrayDeque` vs `Stack`, sınırlı geçmiş, `sealed` + kendi tersini bilen işlemler | 12 | [`gun11`](src/main/java/com/semih/gunluk/gun11) |
 
 ---
 
@@ -374,6 +375,42 @@ fatura.kalemler().add(...);   // UnsupportedOperationException
 
 ---
 
+## Gün 11: MetinEditoru (`Deque` ile geri al / ileri al)
+
+Ctrl+Z ve Ctrl+Y destekleyen küçük bir metin editörü. Her düzenleme kendi tersini bildiği için geri almak, tersini uygulamaktan ibaret.
+
+```java
+MetinEditoru editor = new MetinEditoru(100);   // en fazla 100 adım geçmiş
+editor.yaz("Java çok güzel");
+editor.sil(4, 4);     // "Java güzel"
+editor.yaz("!");      // "Java güzel!"
+
+editor.geriAl();      // "Java güzel"
+editor.geriAl();      // "Java çok güzel"
+editor.ileriAl();     // "Java güzel"
+```
+
+**Neler öğrendim:**
+- **İki yığın:** Yapılan her düzenleme "geri alınacaklar" yığınına giriyor. Geri alınan, oradan çıkıp "ileri alınacaklar" yığınına geçiyor. Son giren ilk çıktığı için (LIFO) en son düzenleme ilk geri alınıyor.
+- **`ArrayDeque`, `Stack` değil:** `Stack`, her metodu `synchronized` olan eski `Vector`'den türüyor; tek thread'li bir editörde boşuna yavaş. `Deque` arayüzü hem yığın (`push`/`pop`) hem kuyruk olarak kullanılabiliyor.
+- **Sınırlı geçmiş:** Geçmiş 100 adımı geçince en eski adım yığının dibinden atılıyor (`removeLast`). `ArrayDeque` iki uçta da O(1) çalıştığı için bu ucuz; `ArrayList`'in başından silmek O(n) olurdu.
+- **Yeni düzenleme ileriyi siler:** Geri alıp sonra yeni bir şey yazınca ileri alınacaklar temizleniyor. Aksi hâlde "geri alınmış gelecek" ile yeni metin birbirine karışırdı.
+- **Silinen yazıyı sakla:** `Silme` sadece "4. karakterden 4 karakter" değil silinen metnin kendisini de tutuyor; geri alırken aynısını yerine koymak için başka yolu yok.
+- **Kendi tersini bilen işlemler:** `Duzenleme` bir `sealed interface`; `Ekleme`'nin tersi `Silme`, `Silme`'nin tersi `Ekleme`. Editör düzenlemenin türünü bilmek zorunda kalmıyor.
+
+| İşlem | `ArrayDeque` | `ArrayList` | `LinkedList` |
+|---|---|---|---|
+| Başa ekle / baştan çıkar | O(1) | O(n) | O(1) |
+| Sona ekle / sondan çıkar | O(1) | O(1) | O(1) |
+| İndeksle erişim | yok | O(1) | O(n) |
+
+| Dosya | Görevi |
+|---|---|
+| `MetinEditoru` | Metin, iki yığın, geçmiş sınırı, konum kontrolleri |
+| `Duzenleme` | `Ekleme` ve `Silme` (`sealed interface` + `record`) |
+
+---
+
 ## Proje yapısı
 
 ```
@@ -388,7 +425,8 @@ src/
 │   ├── gun07/   Kitap, Katalog
 │   ├── gun08/   UrunCsvOkuyucu, Urun, OkumaSonucu, HataliSatir, DosyaOkunamadiException
 │   ├── gun09/   RandevuDefteri, Randevu, BosAralik, CakismaException
-│   └── gun10/   Fatura, FaturaKalemi, KdvOrani
+│   ├── gun10/   Fatura, FaturaKalemi, KdvOrani
+│   └── gun11/   MetinEditoru, Duzenleme
 └── test/java/com/semih/gunluk/
     ├── gun01/   BankaHesabiTest
     ├── gun02/   KelimeSayaciTest
@@ -399,7 +437,8 @@ src/
     ├── gun07/   KatalogTest
     ├── gun08/   UrunCsvOkuyucuTest
     ├── gun09/   RandevuDefteriTest
-    └── gun10/   FaturaTest
+    ├── gun10/   FaturaTest
+    └── gun11/   MetinEditoruTest
 ```
 
 Her yeni gün `gunNN` adında yeni bir paket olarak ekleniyor.

@@ -25,6 +25,7 @@ Her gün bir Java alıştırması. Her günün kodu kendi paketinde, birim testl
 | 10 | Fatura | Builder deseni, değiştirilemez sınıf, savunmacı kopya, `toBuilder`, `EnumMap`, `BigDecimal` yuvarlama | 12 | [`gun10`](src/main/java/com/semih/gunluk/gun10) |
 | 11 | Metin editörü | `Deque` ile iki yığın, geri al / ileri al, `ArrayDeque` vs `Stack`, sınırlı geçmiş, `sealed` + kendi tersini bilen işlemler | 12 | [`gun11`](src/main/java/com/semih/gunluk/gun11) |
 | 12 | Satış analizi | ikili arama, iki işaretçi, sabit ve değişken kayan pencere, Big-O, kaba kuvvetle karşılaştırmalı rastgele testler | 11 | [`gun12`](src/main/java/com/semih/gunluk/gun12) |
+| 13 | Sayaç ve fiyat karşılaştırıcı | yarış durumu, `AtomicLong`, `ConcurrentHashMap.computeIfAbsent`, `ExecutorService` (try-with-resources), `CompletableFuture`, zaman aşımı, `CountDownLatch`, `CyclicBarrier` | 11 | [`gun13`](src/main/java/com/semih/gunluk/gun13) |
 
 ---
 
@@ -449,6 +450,48 @@ SatisAnalizi.hedefeEnKisaSure(satislar, 1000); // 3 (410 + 560 + 30)
 
 ---
 
+## Gün 13: SayfaSayaci ve FiyatKarsilastirici (Eşzamanlılık)
+
+İki küçük eşzamanlılık problemi: birçok thread'den aynı anda gelen ziyaretleri kaybetmeden saymak, ve bir ürünün fiyatını birkaç tedarikçiye aynı anda sorup en ucuzunu seçmek.
+
+```java
+SayfaSayaci sayac = new SayfaSayaci();
+try (ExecutorService havuz = Executors.newFixedThreadPool(8)) {
+    for (int t = 0; t < 8; t++) {
+        havuz.submit(() -> {
+            for (int i = 0; i < 10_000; i++) sayac.kaydet("/blog");
+        });
+    }
+}   // close() bütün işlerin bitmesini bekliyor
+sayac.sayi("/blog");   // 80000, her seferinde
+
+try (ExecutorService havuz = Executors.newFixedThreadPool(4)) {
+    FiyatKarsilastirici karsilastirici = new FiyatKarsilastirici(havuz, Duration.ofMillis(500));
+    karsilastirici.enUcuz("Klavye", List.of(
+            new Tedarikci("Ali Elektronik", urun -> new BigDecimal("799.90")),
+            new Tedarikci("Deniz Bilişim", urun -> new BigDecimal("749.90")),
+            new Tedarikci("Bozuk A.Ş.", urun -> { throw new IllegalStateException("Servis kapalı"); })));
+    // Optional[Teklif[tedarikci=Deniz Bilişim, fiyat=749.90]]
+}
+```
+
+**Neler öğrendim:**
+- **Yarış durumu:** Aynı örneği düz bir `HashMap` ve `put(s, get(s) + 1)` ile denediğimde 80.000 yerine bir seferinde 22.746, bir sonrakinde 54.022 çıktı. İki thread aynı değeri okuyup ikisi de "+1" yazınca bir ziyaret kayboluyor; sonuç her seferinde farklı olduğu için bu hatayı yakalamak zor.
+- **Atomik işlem:** `AtomicLong.incrementAndGet` "oku, bir ekle, yaz" adımlarını bölünmez tek bir işlem yapıyor. `ConcurrentHashMap.computeIfAbsent` da bir sayfanın sayacının tam bir kez oluşturulmasını garanti ediyor. Hiçbir yerde `synchronized` yok.
+- **`ExecutorService` try-with-resources ile:** Java 19'dan beri `ExecutorService` `AutoCloseable`; blok bitince `close()` işlerin bitmesini bekliyor. Thread'leri elle `new Thread(...)` ile açmak yerine sabit boyutlu bir havuz kullanmak, thread sayısını kontrol altında tutuyor.
+- **`CompletableFuture` ile paralel sorgu:** Her tedarikçi ayrı bir thread'de soruluyor; toplam süre cevap sürelerinin toplamı değil en yavaşı kadar. `completeOnTimeout` geç kalanı, `exceptionally` hata vereni "teklif yok" sayıyor; biri bozuk diye sonuç bozulmuyor.
+- **Eşzamanlılığı test etmek:** "Paralel çalıştı mı?" sorusunu süre ölçerek test etmek kırılgan. Onun yerine `CyclicBarrier(3)` kullandım: üç tedarikçi de diğer ikisi gelene kadar bekliyor. Sorular sırayla gitseydi ilk tedarikçi diğerlerini hiç göremez ve hata verirdi. Sayaç testinde de `CountDownLatch` bütün thread'leri aynı anda başlatıp çakışma ihtimalini en yükseğe çıkarıyor.
+
+| Dosya | Görevi |
+|---|---|
+| `SayfaSayaci` | Thread güvenli sayfa sayacı (`ConcurrentHashMap` + `AtomicLong`) |
+| `FiyatKarsilastirici` | Tedarikçilere paralel sorgu, zaman aşımı ve hata yönetimi |
+| `Tedarikci` | Tedarikçi adı ve fiyat kaynağı (`record`) |
+| `FiyatKaynagi` | Fiyat sorgusu (`@FunctionalInterface`) |
+| `Teklif` | Tedarikçi ve fiyat (`record`, doğrulamalı) |
+
+---
+
 ## Proje yapısı
 
 ```
@@ -465,7 +508,8 @@ src/
 │   ├── gun09/   RandevuDefteri, Randevu, BosAralik, CakismaException
 │   ├── gun10/   Fatura, FaturaKalemi, KdvOrani
 │   ├── gun11/   MetinEditoru, Duzenleme
-│   └── gun12/   SatisAnalizi, FiyatCifti
+│   ├── gun12/   SatisAnalizi, FiyatCifti
+│   └── gun13/   SayfaSayaci, FiyatKarsilastirici, Tedarikci, FiyatKaynagi, Teklif
 └── test/java/com/semih/gunluk/
     ├── gun01/   BankaHesabiTest
     ├── gun02/   KelimeSayaciTest
@@ -478,7 +522,8 @@ src/
     ├── gun09/   RandevuDefteriTest
     ├── gun10/   FaturaTest
     ├── gun11/   MetinEditoruTest
-    └── gun12/   SatisAnaliziTest
+    ├── gun12/   SatisAnaliziTest
+    └── gun13/   SayfaSayaciTest, FiyatKarsilastiriciTest
 ```
 
 Her yeni gün `gunNN` adında yeni bir paket olarak ekleniyor.

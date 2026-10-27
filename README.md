@@ -28,6 +28,7 @@ Her gün bir Java alıştırması. Her günün kodu kendi paketinde, birim testl
 | 13 | Sayaç ve fiyat karşılaştırıcı | yarış durumu, `AtomicLong`, `ConcurrentHashMap.computeIfAbsent`, `ExecutorService` (try-with-resources), `CompletableFuture`, zaman aşımı, `CountDownLatch`, `CyclicBarrier` | 11 | [`gun13`](src/main/java/com/semih/gunluk/gun13) |
 | 14 | Toplu SMS | virtual thread (Java 21), `newVirtualThreadPerTaskExecutor`, platform thread havuzuyla karşılaştırma, `Semaphore` ile eş zamanlı sınır | 9 | [`gun14`](src/main/java/com/semih/gunluk/gun14) |
 | 15 | Stok bildirimleri | observer deseni, tipli olay yayını, `sealed` olaylar, `CopyOnWriteArrayList`, `AutoCloseable` abonelik, dinleyici hatalarını yalıtmak | 10 | [`gun15`](src/main/java/com/semih/gunluk/gun15) |
+| 16 | Hava durumu servisi | decorator (önbellek, tekrar deneme), adapter, factory, kalıtım yerine bileşim, `addSuppressed`, testte elle ilerletilen `Clock` | 10 | [`gun16`](src/main/java/com/semih/gunluk/gun16) |
 
 ---
 
@@ -566,6 +567,40 @@ try (Abonelik abonelik = olaylar.aboneOl(StokOlayi.class, System.out::println)) 
 
 ---
 
+## Gün 16: Hava durumu servisi (Decorator, Adapter, Factory)
+
+Uygulama tek bir arayüze, `HavaDurumuServisi`'ne soruyor. Arkada üç desen birlikte çalışıyor: yabancı bir API'yi bizim arayüzümüze uyduran bir **adapter**, ona önbellek ve tekrar deneme ekleyen **decorator**'lar, hepsini doğru sırayla kuran bir **factory**.
+
+```java
+// Yabancı API şehri plaka koduyla istiyor, sıcaklığı "72.5F" diye metin olarak veriyor
+HavaDurumuServisi servis = HavaDurumuServisleri.uretim(yabanciApi, Clock.systemUTC());
+
+servis.sicaklik("İstanbul");   // 22.5 (santigrat)
+servis.sicaklik("İstanbul");   // 22.5, 10 dakika boyunca önbellekten; API'ye gidilmiyor
+
+// Factory'nin kurduğu zincir:
+// OnbellekliServis → TekrarDeneyenServis (3 deneme) → YabanciApiAdaptoru → YabanciHavaApi
+```
+
+**Neler öğrendim:**
+- **Adapter:** Değiştiremediğim bir kütüphaneyi kendi arayüzüme uyduruyor; şehir adını plaka koduna, Fahrenheit metnini santigrada çeviriyor. Yarın başka bir sağlayıcıya geçersem sadece adaptör değişiyor.
+- **Decorator:** Aynı arayüzü uygulayıp içinde başka bir servis taşıyor ve ona davranış ekliyor. Önbellek ve tekrar deneme, servisi değiştirmeden üstüne giydiriliyor; istediğim kadarını, istediğim sırayla üst üste koyabiliyorum.
+- **Kalıtım yerine bileşim:** Aynı şeyi alt sınıflarla yapsaydım `OnbellekliTekrarDeneyenServis` gibi her kombinasyon için ayrı bir sınıf gerekirdi.
+- **Sıra önemli:** Önbellek en dışta: önbellekte varsa ağa hiç çıkılmıyor. Tekrar deneme içte olunca da sadece gerçek çağrılar tekrarlanıyor.
+- **Neyi tekrar denemeli:** Zaman aşımı gibi geçici hatalar tekrar deneniyor, "bilinmeyen şehir" denenmiyor; beş kere sorsan da sonuç değişmez. Hepsi başarısız olunca son hata fırlatılıyor, öncekiler `addSuppressed` ile ona ekleniyor, kaybolmuyor.
+- **Önbellek süresini test etmek:** 10 dakika beklemek yerine testte kendi `Clock` alt sınıfım var (`AyarlanabilirSaat`); `saat.ilerlet(Duration.ofMinutes(10))` ile zamanı ileri sarıyorum.
+
+| Dosya | Görevi |
+|---|---|
+| `HavaDurumuServisi` | Uygulamanın kullandığı arayüz |
+| `YabanciHavaApi` | Değiştiremediğimiz dış API'nin arayüzü |
+| `YabanciApiAdaptoru` | Adapter: plaka kodu, Fahrenheit → santigrat |
+| `OnbellekliServis` | Decorator: süreli önbellek (`Clock` ile) |
+| `TekrarDeneyenServis` | Decorator: geçici hatalarda tekrar deneme |
+| `HavaDurumuServisleri` | Factory: zinciri doğru sırayla kurar |
+
+---
+
 ## Proje yapısı
 
 ```
@@ -585,7 +620,8 @@ src/
 │   ├── gun12/   SatisAnalizi, FiyatCifti
 │   ├── gun13/   SayfaSayaci, FiyatKarsilastirici, Tedarikci, FiyatKaynagi, Teklif
 │   ├── gun14/   TopluSmsGonderici, Bildirim, SmsServisi, GonderimRaporu
-│   └── gun15/   Depo, OlayYayini, Abonelik, StokOlayi
+│   ├── gun15/   Depo, OlayYayini, Abonelik, StokOlayi
+│   └── gun16/   HavaDurumuServisi, YabanciApiAdaptoru, OnbellekliServis, TekrarDeneyenServis, HavaDurumuServisleri
 └── test/java/com/semih/gunluk/
     ├── gun01/   BankaHesabiTest
     ├── gun02/   KelimeSayaciTest
@@ -601,7 +637,8 @@ src/
     ├── gun12/   SatisAnaliziTest
     ├── gun13/   SayfaSayaciTest, FiyatKarsilastiriciTest
     ├── gun14/   TopluSmsGondericiTest
-    └── gun15/   DepoTest
+    ├── gun15/   DepoTest
+    └── gun16/   HavaDurumuServisiTest, AyarlanabilirSaat
 ```
 
 Her yeni gün `gunNN` adında yeni bir paket olarak ekleniyor.

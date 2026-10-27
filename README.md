@@ -29,6 +29,7 @@ Her gün bir Java alıştırması. Her günün kodu kendi paketinde, birim testl
 | 14 | Toplu SMS | virtual thread (Java 21), `newVirtualThreadPerTaskExecutor`, platform thread havuzuyla karşılaştırma, `Semaphore` ile eş zamanlı sınır | 9 | [`gun14`](src/main/java/com/semih/gunluk/gun14) |
 | 15 | Stok bildirimleri | observer deseni, tipli olay yayını, `sealed` olaylar, `CopyOnWriteArrayList`, `AutoCloseable` abonelik, dinleyici hatalarını yalıtmak | 10 | [`gun15`](src/main/java/com/semih/gunluk/gun15) |
 | 16 | Hava durumu servisi | decorator (önbellek, tekrar deneme), adapter, factory, kalıtım yerine bileşim, `addSuppressed`, testte elle ilerletilen `Clock` | 10 | [`gun16`](src/main/java/com/semih/gunluk/gun16) |
+| 17 | Doğrulayıcılar | T.C. kimlik no kontrol haneleri, IBAN mod 97 (`BigInteger`'sız), regex adlandırılmış grupları, `matches` vs `find`, `Math.floorMod`, `@NullAndEmptySource` | 10 | [`gun17`](src/main/java/com/semih/gunluk/gun17) |
 
 ---
 
@@ -601,6 +602,40 @@ servis.sicaklik("İstanbul");   // 22.5, 10 dakika boyunca önbellekten; API'ye 
 
 ---
 
+## Gün 17: Doğrulayıcılar (T.C. kimlik no, IBAN, telefon)
+
+Türkiye'deki formlarda en sık karşılaşılan üç alanın gerçek doğrulaması. "11 rakam mı?" diye bakmak yetmiyor; T.C. kimlik numarası ve IBAN'ın içinde yanlış yazımı yakalayan kontrol haneleri var.
+
+```java
+TcKimlikNo.gecerliMi("10000000146");   // true
+TcKimlikNo.gecerliMi("10000000147");   // false: son hane tutmuyor
+
+Iban.gecerliMi("TR33 0006 1005 1978 6457 8413 26");   // true
+Iban.bicimle("tr330006100519786457841326");           // "TR33 0006 1005 1978 6457 8413 26"
+
+Telefon.normalle("+90 (532) 123-4567");   // Optional[+905321234567]
+Telefon.okunur("5321234567");             // Optional[0532 123 45 67]
+Telefon.normalle("0212 123 45 67");       // Optional.empty: sabit hat
+```
+
+Örneklerdeki numaralar algoritmaya uyan ama kimseye ait olmayan test numaraları.
+
+**Neler öğrendim:**
+- **Kontrol haneleri:** T.C. kimlik numarasının 10. hanesi tek ve çift sıradaki hanelerden, 11. hanesi ilk on hanenin toplamından hesaplanıyor. Bir rakamı yanlış yazmak neredeyse her zaman yakalanıyor. Bu sadece biçimin doğru olduğunu gösterir, numaranın birine ait olduğunu değil.
+- **`Math.floorMod`:** Java'da `-3 % 10` sonucu `-3`. Kontrol hanesi hesabında ara değer negatif olabildiği için `floorMod` kullanıyorum; sonuç hep 0–9 arasında.
+- **IBAN mod 97:** İlk dört karakter sona alınıyor, harfler sayıya çevriliyor (A=10 … Z=35), ortaya çıkan 30 haneli sayının 97'ye bölümünden kalan 1 olmalı. Bu sayı `long`'a sığmıyor; `BigInteger` yerine sayıyı soldan sağa okuyup her adımda sadece kalanı tutuyorum, kâğıt üzerinde uzun bölme gibi.
+- **Karakterin sayı değeri:** `c - '0'` bir rakam karakterini sayıya çeviriyor; `Character.digit(c, 36)` hem rakamları hem harfleri (A=10) tek seferde çeviriyor.
+- **Adlandırılmış gruplar:** `(?<operator>5\d{2})` ile yakalanan parçayı `m.group("operator")` diye adıyla alıyorum; desene grup eklense de numaralar kaymıyor.
+- **`matches` ile `find` farkı:** `matches` bütün metnin desene uymasını istiyor. `find` olsaydı 13 haneli bir sayının içindeki 10 hane de "geçerli" sayılırdı.
+
+| Dosya | Görevi |
+|---|---|
+| `TcKimlikNo` | Uzunluk, ilk hane ve iki kontrol hanesi |
+| `Iban` | Biçim, Türkiye için 26 karakter, mod 97, dörtlü gruplama |
+| `Telefon` | Cep numarasını E.164 (`+90...`) ve okunur biçime getirme |
+
+---
+
 ## Proje yapısı
 
 ```
@@ -621,7 +656,8 @@ src/
 │   ├── gun13/   SayfaSayaci, FiyatKarsilastirici, Tedarikci, FiyatKaynagi, Teklif
 │   ├── gun14/   TopluSmsGonderici, Bildirim, SmsServisi, GonderimRaporu
 │   ├── gun15/   Depo, OlayYayini, Abonelik, StokOlayi
-│   └── gun16/   HavaDurumuServisi, YabanciApiAdaptoru, OnbellekliServis, TekrarDeneyenServis, HavaDurumuServisleri
+│   ├── gun16/   HavaDurumuServisi, YabanciApiAdaptoru, OnbellekliServis, TekrarDeneyenServis, HavaDurumuServisleri
+│   └── gun17/   TcKimlikNo, Iban, Telefon
 └── test/java/com/semih/gunluk/
     ├── gun01/   BankaHesabiTest
     ├── gun02/   KelimeSayaciTest
@@ -638,7 +674,8 @@ src/
     ├── gun13/   SayfaSayaciTest, FiyatKarsilastiriciTest
     ├── gun14/   TopluSmsGondericiTest
     ├── gun15/   DepoTest
-    └── gun16/   HavaDurumuServisiTest, AyarlanabilirSaat
+    ├── gun16/   HavaDurumuServisiTest, AyarlanabilirSaat
+    └── gun17/   DogrulayicilarTest
 ```
 
 Her yeni gün `gunNN` adında yeni bir paket olarak ekleniyor.

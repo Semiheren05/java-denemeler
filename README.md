@@ -30,6 +30,7 @@ Her gün bir Java alıştırması. Her günün kodu kendi paketinde, birim testl
 | 15 | Stok bildirimleri | observer deseni, tipli olay yayını, `sealed` olaylar, `CopyOnWriteArrayList`, `AutoCloseable` abonelik, dinleyici hatalarını yalıtmak | 10 | [`gun15`](src/main/java/com/semih/gunluk/gun15) |
 | 16 | Hava durumu servisi | decorator (önbellek, tekrar deneme), adapter, factory, kalıtım yerine bileşim, `addSuppressed`, testte elle ilerletilen `Clock` | 10 | [`gun16`](src/main/java/com/semih/gunluk/gun16) |
 | 17 | Doğrulayıcılar | T.C. kimlik no kontrol haneleri, IBAN mod 97 (`BigInteger`'sız), regex adlandırılmış grupları, `matches` vs `find`, `Math.floorMod`, `@NullAndEmptySource` | 10 | [`gun17`](src/main/java/com/semih/gunluk/gun17) |
+| 18 | Üye kaydı | `Sonuc<T>` tipi (`sealed` + generic `record`), istisna yerine dönüş tipiyle hata, `map`/`flatMap`/`katla`, hataları biriktirme ve ilk hatada durma, generic record pattern | 11 | [`gun18`](src/main/java/com/semih/gunluk/gun18) |
 
 ---
 
@@ -636,6 +637,45 @@ Telefon.normalle("0212 123 45 67");       // Optional.empty: sabit hat
 
 ---
 
+## Gün 18: Sonuc ve UyeKaydi (İstisnasız hata yönetimi)
+
+Bir üyelik formunu doğrulayan servis. Gün 17'deki doğrulayıcıları kullanıyor ve hiç istisna fırlatmıyor: sonuç ya `Basarili` (üye) ya `Hatali` (hata listesi).
+
+```java
+UyeKaydi kayit = new UyeKaydi(Year.of(2026));
+
+kayit.kaydet(new KayitFormu("Ayşe Yılmaz", "10000000146", "TR33 0006 1005 1978 6457 8413 26",
+        "0532 123 45 67", "1998"));
+// Basarili[deger=Uye[ad=Ayşe Yılmaz, tcKimlikNo=10000000146, iban=TR33 0006 1005 1978 6457 8413 26,
+//          telefon=+905321234567, dogumYili=1998]]
+
+kayit.kaydet(new KayitFormu(" ", "10000000147", "TR00", "0212 123 45 67", "bin dokuz yüz"));
+// Hatali[hatalar=[Ad boş olamaz, T.C. kimlik numarası geçersiz, IBAN geçersiz,
+//                 Cep telefonu numarası geçersiz, Doğum yılı sayı olmalı]]
+
+String cevap = switch (sonuc) {
+    case Sonuc.Basarili<Uye>(Uye uye) -> "Hoş geldin " + uye.ad();
+    case Sonuc.Hatali<Uye>(List<String> hatalar) -> hatalar.size() + " hata";
+};
+```
+
+**Neler öğrendim:**
+- **Beklenen hata istisna değil:** Yanlış girilmiş bir form alanı programın bozulması değil, olağan bir durum. `Sonuc<Uye>` dönüş tipi "bu başarısız olabilir" diye imzada yazıyor; çağıran bunu görmezden gelemiyor. İstisnalar gerçekten beklenmeyen durumlara kalıyor.
+- **`sealed` + `switch`:** `Sonuc` sadece `Basarili` ya da `Hatali` olabildiği için `switch` iki durumu da ele alınca `default` gerekmiyor. Generic record pattern (`case Basarili<Uye>(Uye uye)`) değeri doğrudan çıkarıyor.
+- **`map` ve `flatMap`:** `map` başarılı değeri dönüştürüyor, hatalıysa fonksiyonu hiç çağırmıyor. `flatMap` sıradaki adım da başarısız olabiliyorsa; yaş ve "aynı T.C. ile ikinci kayıt" kuralları bu şekilde zincirleniyor ve ilk hatada duruyor.
+- **Biriktirmek mi, durmak mı:** Form alanları birbirinden bağımsız; hepsi birden kontrol edilip bütün hatalar tek seferde gösteriliyor, kullanıcı beş kez gönder-düzelt yapmıyor. İş kuralları ise sırayla çalışıyor; reşit olmayan birinin T.C.'sinin kayıtlı olup olmadığına bakmanın anlamı yok.
+- **Eski kodla köprü:** `Integer.parseInt` istisna fırlatıyor; `Sonuc.dene(...)` onu sonuca çeviriyor. `Optional` dönen `Telefon.normalle` için de `Sonuc.optionaldan(...)` var.
+- **`katla`:** İki durumu tek bir değere indiriyor, ör. bir controller'da `201` ya da `400` cevabı.
+
+| Dosya | Görevi |
+|---|---|
+| `Sonuc` | `Basarili` / `Hatali`, `map`, `flatMap`, `katla`, `dene`, `tumHatalar` (`sealed interface` + generic `record`) |
+| `UyeKaydi` | Alan doğrulama (hatalar biriktiriliyor) ve iş kuralları (ilk hatada duruluyor) |
+| `KayitFormu` | Forma yazılanlar, ham metin (`record`) |
+| `Uye` | Doğrulanmış, düzenlenmiş üye (`record`) |
+
+---
+
 ## Proje yapısı
 
 ```
@@ -657,7 +697,8 @@ src/
 │   ├── gun14/   TopluSmsGonderici, Bildirim, SmsServisi, GonderimRaporu
 │   ├── gun15/   Depo, OlayYayini, Abonelik, StokOlayi
 │   ├── gun16/   HavaDurumuServisi, YabanciApiAdaptoru, OnbellekliServis, TekrarDeneyenServis, HavaDurumuServisleri
-│   └── gun17/   TcKimlikNo, Iban, Telefon
+│   ├── gun17/   TcKimlikNo, Iban, Telefon
+│   └── gun18/   Sonuc, UyeKaydi, KayitFormu, Uye
 └── test/java/com/semih/gunluk/
     ├── gun01/   BankaHesabiTest
     ├── gun02/   KelimeSayaciTest
@@ -675,7 +716,8 @@ src/
     ├── gun14/   TopluSmsGondericiTest
     ├── gun15/   DepoTest
     ├── gun16/   HavaDurumuServisiTest, AyarlanabilirSaat
-    └── gun17/   DogrulayicilarTest
+    ├── gun17/   DogrulayicilarTest
+    └── gun18/   UyeKaydiTest
 ```
 
 Her yeni gün `gunNN` adında yeni bir paket olarak ekleniyor.

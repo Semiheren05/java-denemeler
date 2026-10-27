@@ -27,6 +27,7 @@ Her gün bir Java alıştırması. Her günün kodu kendi paketinde, birim testl
 | 12 | Satış analizi | ikili arama, iki işaretçi, sabit ve değişken kayan pencere, Big-O, kaba kuvvetle karşılaştırmalı rastgele testler | 11 | [`gun12`](src/main/java/com/semih/gunluk/gun12) |
 | 13 | Sayaç ve fiyat karşılaştırıcı | yarış durumu, `AtomicLong`, `ConcurrentHashMap.computeIfAbsent`, `ExecutorService` (try-with-resources), `CompletableFuture`, zaman aşımı, `CountDownLatch`, `CyclicBarrier` | 11 | [`gun13`](src/main/java/com/semih/gunluk/gun13) |
 | 14 | Toplu SMS | virtual thread (Java 21), `newVirtualThreadPerTaskExecutor`, platform thread havuzuyla karşılaştırma, `Semaphore` ile eş zamanlı sınır | 9 | [`gun14`](src/main/java/com/semih/gunluk/gun14) |
+| 15 | Stok bildirimleri | observer deseni, tipli olay yayını, `sealed` olaylar, `CopyOnWriteArrayList`, `AutoCloseable` abonelik, dinleyici hatalarını yalıtmak | 10 | [`gun15`](src/main/java/com/semih/gunluk/gun15) |
 
 ---
 
@@ -528,6 +529,43 @@ new TopluSmsGonderici(bildirim -> Thread.sleep(100), 500).sanalThreadlerle(onBin
 
 ---
 
+## Gün 15: Depo ve OlayYayini (Observer deseni)
+
+Stok azalınca ya da bitince haber veren bir depo. Depo kimin dinlediğini bilmiyor; sadece "şu oldu" diye yayınlıyor.
+
+```java
+OlayYayini<StokOlayi> olaylar = new OlayYayini<>();
+Depo depo = new Depo(olaylar, 5);   // kritik seviye 5
+
+olaylar.aboneOl(StokOlayi.StokAzaldi.class, olay -> System.out.println("Azaldı: " + olay));
+olaylar.aboneOl(StokOlayi.StokBitti.class, olay -> System.out.println("Bitti: " + olay.urun()));
+
+depo.ekle("Klavye", 10);
+depo.sat("Klavye", 6);   // Azaldı: StokAzaldi[urun=Klavye, kalan=4, kritikSeviye=5]
+depo.sat("Klavye", 4);   // Bitti: Klavye
+
+try (Abonelik abonelik = olaylar.aboneOl(StokOlayi.class, System.out::println)) {
+    // blok bitince abonelik kendiliğinden kapanıyor
+}
+```
+
+**Neler öğrendim:**
+- **Gevşek bağlılık:** Depo e-posta göndermiyor, paneli güncellemiyor, tedarikçiye sipariş açmıyor; bunları bilmiyor bile. Yeni bir tepki eklemek için depoya dokunmak gerekmiyor, sadece yeni bir dinleyici abone oluyor.
+- **Türe göre abonelik:** `aboneOl(StokBitti.class, ...)` sadece biten stokları, `aboneOl(StokOlayi.class, ...)` hepsini alıyor. `Consumer<? super T>` sayesinde genel bir dinleyici özel olaylara da bağlanabiliyor.
+- **`CopyOnWriteArrayList`:** Bir dinleyici olay sırasında yeni abonelik açarsa ya da kendi aboneliğini kapatırsa, düz `ArrayList` üzerinde dönerken `ConcurrentModificationException` alınır. Bu liste her değişiklikte kopyalanıyor, dönen döngü eski kopyada devam ediyor. Okuması çok, yazması az listeler için.
+- **Bir dinleyicinin hatası diğerlerini bozmasın:** E-posta sunucusu kapalı diye panel güncellenmeden kalmamalı, satış da geri alınmamalı. Hatalar toplanıp çağırana veriliyor.
+- **Eşiği geçiş anında haber ver:** Stok 4'ten 3'e inince tekrar "azaldı" denmiyor; sadece eşiğin üstünden altına inildiği an bir kez. Yoksa her satışta aynı uyarı gelir.
+- **`AutoCloseable` abonelik:** Abonelik bir `close()` metodu; try-with-resources ile kullanılınca blok bitince kendiliğinden iptal oluyor, dinleyici unutulup bellekte kalmıyor.
+
+| Dosya | Görevi |
+|---|---|
+| `Depo` | Stok, kritik seviye, olayları yayınlama |
+| `OlayYayini` | Genel (generic) olay yayını, türe göre abonelik |
+| `Abonelik` | İptal edilebilir abonelik (`AutoCloseable`) |
+| `StokOlayi` | `StokEklendi`, `StokAzaldi`, `StokBitti` (`sealed interface` + `record`) |
+
+---
+
 ## Proje yapısı
 
 ```
@@ -546,7 +584,8 @@ src/
 │   ├── gun11/   MetinEditoru, Duzenleme
 │   ├── gun12/   SatisAnalizi, FiyatCifti
 │   ├── gun13/   SayfaSayaci, FiyatKarsilastirici, Tedarikci, FiyatKaynagi, Teklif
-│   └── gun14/   TopluSmsGonderici, Bildirim, SmsServisi, GonderimRaporu
+│   ├── gun14/   TopluSmsGonderici, Bildirim, SmsServisi, GonderimRaporu
+│   └── gun15/   Depo, OlayYayini, Abonelik, StokOlayi
 └── test/java/com/semih/gunluk/
     ├── gun01/   BankaHesabiTest
     ├── gun02/   KelimeSayaciTest
@@ -561,7 +600,8 @@ src/
     ├── gun11/   MetinEditoruTest
     ├── gun12/   SatisAnaliziTest
     ├── gun13/   SayfaSayaciTest, FiyatKarsilastiriciTest
-    └── gun14/   TopluSmsGondericiTest
+    ├── gun14/   TopluSmsGondericiTest
+    └── gun15/   DepoTest
 ```
 
 Her yeni gün `gunNN` adında yeni bir paket olarak ekleniyor.

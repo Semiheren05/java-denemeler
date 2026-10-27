@@ -26,6 +26,7 @@ Her gün bir Java alıştırması. Her günün kodu kendi paketinde, birim testl
 | 11 | Metin editörü | `Deque` ile iki yığın, geri al / ileri al, `ArrayDeque` vs `Stack`, sınırlı geçmiş, `sealed` + kendi tersini bilen işlemler | 12 | [`gun11`](src/main/java/com/semih/gunluk/gun11) |
 | 12 | Satış analizi | ikili arama, iki işaretçi, sabit ve değişken kayan pencere, Big-O, kaba kuvvetle karşılaştırmalı rastgele testler | 11 | [`gun12`](src/main/java/com/semih/gunluk/gun12) |
 | 13 | Sayaç ve fiyat karşılaştırıcı | yarış durumu, `AtomicLong`, `ConcurrentHashMap.computeIfAbsent`, `ExecutorService` (try-with-resources), `CompletableFuture`, zaman aşımı, `CountDownLatch`, `CyclicBarrier` | 11 | [`gun13`](src/main/java/com/semih/gunluk/gun13) |
+| 14 | Toplu SMS | virtual thread (Java 21), `newVirtualThreadPerTaskExecutor`, platform thread havuzuyla karşılaştırma, `Semaphore` ile eş zamanlı sınır | 9 | [`gun14`](src/main/java/com/semih/gunluk/gun14) |
 
 ---
 
@@ -492,6 +493,41 @@ try (ExecutorService havuz = Executors.newFixedThreadPool(4)) {
 
 ---
 
+## Gün 14: TopluSmsGonderici (Virtual thread'ler, Java 21)
+
+Binlerce SMS'i aynı anda gönderen bir servis. Her gönderim cevap gelene kadar bekleyen bir ağ çağrısı; Java 21'in virtual thread'leri tam bu tür işler için.
+
+```java
+// Her SMS 100 ms süren bir ağ çağrısı
+TopluSmsGonderici gonderici = new TopluSmsGonderici(bildirim -> Thread.sleep(100), 10_000);
+
+gonderici.sanalThreadlerle(onBinSms);
+// GonderimRaporu[basarili=10000, basarisiz=0, sure=PT0.218S]
+
+gonderici.platformHavuzuyla(onBinSms, 200);
+// GonderimRaporu[basarili=10000, basarisiz=0, sure=PT5.087S]
+
+new TopluSmsGonderici(bildirim -> Thread.sleep(100), 500).sanalThreadlerle(onBinSms);
+// aynı anda en fazla 500 gönderim: sure=PT2.032S
+```
+
+**Neler öğrendim:**
+- **Platform thread pahalı:** Her biri bir işletim sistemi thread'i ve kendi yığın belleği var; on binlercesi açılamıyor. Bu yüzden sabit bir havuz kullanılıyor ve işler sıra bekliyor: 200 thread'lik havuzla 10.000 SMS bende 5,1 saniye sürdü (10.000 / 200 × 100 ms).
+- **Virtual thread ucuz:** JVM'in yönettiği hafif bir thread. `Thread.sleep` ya da bir ağ çağrısında beklerken altındaki işletim sistemi thread'ini bırakıyor, o thread başka bir işi yürütüyor. Her işe ayrı bir virtual thread açınca aynı 10.000 SMS 0,2 saniyede bitti.
+- **Kod neredeyse aynı:** Sadece `Executors.newFixedThreadPool(200)` yerine `Executors.newVirtualThreadPerTaskExecutor()`. `CompletableFuture` zinciri ya da reaktif kütüphane gerekmeden, düz bloklayan kodla yüksek eşzamanlılık.
+- **Thread ucuz, karşıdaki servis değil:** SMS sağlayıcısı aynı anda 10.000 isteği kaldırmayabilir. `Semaphore` aynı anda en fazla N gönderime izin veriyor; testte sayaçla ölçüp sınırın hiç aşılmadığını doğruluyorum.
+- **İzin `finally`'de geri verilir:** Gönderim hata verse bile `release()` çağrılıyor. Yoksa her hatada sınır bir azalır ve sonunda herkes sonsuza kadar bekler; sınırı 1 olan ve hep hata veren bir servisle bunun testi var.
+- **Virtual thread ne zaman işe yaramaz:** Bekleme değil hesaplama yapan (CPU'yu meşgul eden) işlerde; orada çekirdek sayısından fazla thread bir şey kazandırmıyor.
+
+| Dosya | Görevi |
+|---|---|
+| `TopluSmsGonderici` | Virtual thread ve platform havuzuyla gönderim, `Semaphore` sınırı |
+| `Bildirim` | Telefon ve mesaj (`record`, doğrulamalı) |
+| `SmsServisi` | Dış servis (`@FunctionalInterface`, bloklayan çağrı) |
+| `GonderimRaporu` | Başarılı, başarısız, süre (`record`) |
+
+---
+
 ## Proje yapısı
 
 ```
@@ -509,7 +545,8 @@ src/
 │   ├── gun10/   Fatura, FaturaKalemi, KdvOrani
 │   ├── gun11/   MetinEditoru, Duzenleme
 │   ├── gun12/   SatisAnalizi, FiyatCifti
-│   └── gun13/   SayfaSayaci, FiyatKarsilastirici, Tedarikci, FiyatKaynagi, Teklif
+│   ├── gun13/   SayfaSayaci, FiyatKarsilastirici, Tedarikci, FiyatKaynagi, Teklif
+│   └── gun14/   TopluSmsGonderici, Bildirim, SmsServisi, GonderimRaporu
 └── test/java/com/semih/gunluk/
     ├── gun01/   BankaHesabiTest
     ├── gun02/   KelimeSayaciTest
@@ -523,7 +560,8 @@ src/
     ├── gun10/   FaturaTest
     ├── gun11/   MetinEditoruTest
     ├── gun12/   SatisAnaliziTest
-    └── gun13/   SayfaSayaciTest, FiyatKarsilastiriciTest
+    ├── gun13/   SayfaSayaciTest, FiyatKarsilastiriciTest
+    └── gun14/   TopluSmsGondericiTest
 ```
 
 Her yeni gün `gunNN` adında yeni bir paket olarak ekleniyor.

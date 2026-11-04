@@ -33,6 +33,7 @@ Her gün bir Java alıştırması. Her günün kodu kendi paketinde, birim testl
 | 18 | Üye kaydı | `Sonuc<T>` tipi (`sealed` + generic `record`), istisna yerine dönüş tipiyle hata, `map`/`flatMap`/`katla`, hataları biriktirme ve ilk hatada durma, generic record pattern | 11 | [`gun18`](src/main/java/com/semih/gunluk/gun18) |
 | 19 | Doğrulama kütüphanesi | kendi anotasyonların (`@interface`), `@Retention`/`@Target`, reflection (`getDeclaredFields`, `setAccessible`), record bileşenleri, reflection sonucunu önbelleğe almak | 9 | [`gun19`](src/main/java/com/semih/gunluk/gun19) |
 | 20 | Mini DI kapsayıcısı | bağımlılık enjeksiyonu, constructor reflection, singleton, arayüz bağlama, döngüsel bağımlılık tespiti, `SequencedSet`, `InvocationTargetException` | 10 | [`gun20`](src/main/java/com/semih/gunluk/gun20) |
+| 21 | Metro rota planlayıcı | graf, komşuluk listesi, Dijkstra (`PriorityQueue`), BFS, yol geri izleme, Floyd-Warshall ile karşılaştırmalı rastgele test | 9 | [`gun21`](src/main/java/com/semih/gunluk/gun21) |
 
 ---
 
@@ -748,6 +749,40 @@ new Kapsayici().getir(Tavuk.class);
 
 ---
 
+## Gün 21: MetroAgi (Graflar, Dijkstra ve BFS)
+
+İstanbul raylı sisteminden küçük bir parça üzerinde iki durak arası rota: en kısa sürede mi, en az durakla mı? (Süreler örnek.)
+
+```java
+MetroAgi ag = new MetroAgi()
+        .hatEkle("M2", 2, "Yenikapı", "Vezneciler", "Haliç", "Şişhane", "Taksim", "Osmanbey")
+        .hatEkle("Marmaray", 4, "Yenikapı", "Sirkeci", "Üsküdar")
+        .hatEkle("T1", 4, "Sirkeci", "Karaköy", "Tophane", "Kabataş")
+        .baglantiEkle("Kabataş", "Taksim", 3, "F1");
+
+ag.enHizli("Sirkeci", "Taksim");
+// Rota[duraklar=[Sirkeci, Yenikapı, Vezneciler, Haliç, Şişhane, Taksim], dakika=12, aktarma=1]
+
+ag.enAzDurak("Sirkeci", "Taksim");
+// Rota[duraklar=[Sirkeci, Karaköy, Tophane, Kabataş, Taksim], dakika=15, aktarma=1]
+```
+
+**Neler öğrendim:**
+- **Graf:** Duraklar düğüm, aralarındaki yollar kenar, süreler kenarın ağırlığı. Komşuluk listesiyle (`Map<String, List<Baglanti>>`) tutuluyor; her durak sadece gidebildiği yerleri biliyor.
+- **BFS en az durağı bulur:** Önce 1 durak ötedekiler, sonra 2 durak ötedekiler... sıradan bir kuyrukla. Hedefe ilk varıldığı an en az durakla varılmış oluyor ama süreye hiç bakmıyor.
+- **Dijkstra en kısa süreyi bulur:** Kuyruk yerine `PriorityQueue`; her seferinde o ana kadar en yakın durak çıkıyor. Ağırlıklar pozitif olduğu için o durağa daha kısa bir yol bulunamaz. Negatif ya da sıfır süre bu yüzden reddediliyor.
+- **Eski kayıtları atla:** Bir durağa sonradan daha kısa yol bulununca eski kayıt kuyrukta kalıyor; çıktığında "bundan iyisi var" diye atlanıyor. Bunu yakalayan ayrı bir test var.
+- **Yolu geri izlemek:** Her durak için "nereden geldim" saklanıyor, varıştan başlangıca geri yürünüp liste ters çevriliyor. Hat değişimleri de aynı yolda sayılıyor.
+- **Kaba kuvvetle karşılaştırma:** Floyd-Warshall O(n³) ama çok basit; yüz rastgele ağda her durak çifti için Dijkstra'yla aynı süreyi bulduğunu test ediyorum.
+
+| Dosya | Görevi |
+|---|---|
+| `MetroAgi` | Graf, Dijkstra, BFS, rota geri izleme |
+| `Baglanti` | Hedef durak, dakika, hat (`record`) |
+| `Rota` | Duraklar, toplam süre, aktarma sayısı (`record`) |
+
+---
+
 ## Proje yapısı
 
 ```
@@ -772,7 +807,8 @@ src/
 │   ├── gun17/   TcKimlikNo, Iban, Telefon
 │   ├── gun18/   Sonuc, UyeKaydi, KayitFormu, Uye
 │   ├── gun19/   Dogrulayici, Zorunlu, Uzunluk, Aralik, Desen, Ihlal, UyelikFormu
-│   └── gun20/   Kapsayici, Enjekte, KapsayiciHatasi, SiparisServisi, SiparisDeposu, BellekSiparisDeposu, BildirimServisi, Siparis
+│   ├── gun20/   Kapsayici, Enjekte, KapsayiciHatasi, SiparisServisi, SiparisDeposu, BellekSiparisDeposu, BildirimServisi, Siparis
+│   └── gun21/   MetroAgi, Baglanti, Rota
 └── test/java/com/semih/gunluk/
     ├── gun01/   BankaHesabiTest
     ├── gun02/   KelimeSayaciTest
@@ -793,7 +829,8 @@ src/
     ├── gun17/   DogrulayicilarTest
     ├── gun18/   UyeKaydiTest
     ├── gun19/   DogrulayiciTest
-    └── gun20/   KapsayiciTest
+    ├── gun20/   KapsayiciTest
+    └── gun21/   MetroAgiTest
 ```
 
 Her yeni gün `gunNN` adında yeni bir paket olarak ekleniyor.

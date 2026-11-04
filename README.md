@@ -34,6 +34,7 @@ Her gün bir Java alıştırması. Her günün kodu kendi paketinde, birim testl
 | 19 | Doğrulama kütüphanesi | kendi anotasyonların (`@interface`), `@Retention`/`@Target`, reflection (`getDeclaredFields`, `setAccessible`), record bileşenleri, reflection sonucunu önbelleğe almak | 9 | [`gun19`](src/main/java/com/semih/gunluk/gun19) |
 | 20 | Mini DI kapsayıcısı | bağımlılık enjeksiyonu, constructor reflection, singleton, arayüz bağlama, döngüsel bağımlılık tespiti, `SequencedSet`, `InvocationTargetException` | 10 | [`gun20`](src/main/java/com/semih/gunluk/gun20) |
 | 21 | Metro rota planlayıcı | graf, komşuluk listesi, Dijkstra (`PriorityQueue`), BFS, yol geri izleme, Floyd-Warshall ile karşılaştırmalı rastgele test | 9 | [`gun21`](src/main/java/com/semih/gunluk/gun21) |
+| 22 | LRU önbellek | `HashMap` + çift yönlü bağlı liste ile O(1), bekçi düğümler, `LinkedHashMap` `accessOrder` ve `removeEldestEntry`, isabet oranı | 10 | [`gun22`](src/main/java/com/semih/gunluk/gun22) |
 
 ---
 
@@ -783,6 +784,37 @@ ag.enAzDurak("Sirkeci", "Taksim");
 
 ---
 
+## Gün 22: LruOnbellek (Önbellek ve bağlı liste)
+
+Sınırlı boyutlu bir önbellek: dolunca en uzun süredir kullanılmayan kayıt atılıyor (LRU, Least Recently Used). Mülakatların klasik sorusu; önce kendi O(1) çözümüm, sonra Java'nın hazır parçalarıyla 10 satırlık hâli.
+
+```java
+LruOnbellek<String, String> onbellek = new LruOnbellek<>(3);
+onbellek.koy("/urun/1", "Klavye");
+onbellek.koy("/urun/2", "Mouse");
+onbellek.koy("/urun/3", "Monitör");
+onbellek.getir("/urun/1");              // okumak da "kullanmak": /urun/1 tazelendi
+onbellek.koy("/urun/4", "Kulaklık");    // dolu: en eski /urun/2 atılıyor
+
+onbellek.kullanimSirasi();   // [/urun/4, /urun/1, /urun/3]
+onbellek.getir("/urun/2");   // Optional.empty
+onbellek.isabetOrani();      // 0.5
+```
+
+**Neler öğrendim:**
+- **İki yapı birlikte:** `HashMap` anahtarı O(1)'de buluyor ama sırayı bilmiyor; bağlı liste sırayı tutuyor ama aramak O(n). Map'te değer olarak liste düğümünü saklayınca ikisinin iyi yanı birleşiyor: hem bulmak hem en eskiyi atmak O(1).
+- **Çift yönlü bağlı liste:** Bir düğümü listenin ortasından çıkarmak için önceki ve sonraki komşusunun işaretçilerini değiştirmek yetiyor. Tek yönlü listede öncekini bulmak için baştan yürümek gerekirdi.
+- **Bekçi (sentinel) düğümler:** Başta ve sonda içi boş iki sahte düğüm var; liste hiç boş olmuyor, "ilk eleman mı, son eleman mı?" diye özel durum yazmak gerekmiyor.
+- **`LinkedHashMap`'in gizli özelliği:** `new LinkedHashMap<>(16, 0.75f, true)`: üçüncü parametre sırayı ekleme yerine son erişime göre tutuyor. `removeEldestEntry`'yi ezince LRU önbellek 10 satırda hazır. Gerçek projede bu (ya da Caffeine) kullanılır.
+- **İki sürümü karşılaştırmak:** 20.000 rastgele okuma/yazma işleminde iki sürümün her adımda aynı sonucu ve sonunda aynı sırayı verdiğini test ediyorum.
+
+| Dosya | Görevi |
+|---|---|
+| `LruOnbellek` | `HashMap` + çift yönlü bağlı liste, atılınca bildirim, isabet oranı |
+| `KisaLruOnbellek` | Aynısı `LinkedHashMap` ile |
+
+---
+
 ## Proje yapısı
 
 ```
@@ -808,7 +840,8 @@ src/
 │   ├── gun18/   Sonuc, UyeKaydi, KayitFormu, Uye
 │   ├── gun19/   Dogrulayici, Zorunlu, Uzunluk, Aralik, Desen, Ihlal, UyelikFormu
 │   ├── gun20/   Kapsayici, Enjekte, KapsayiciHatasi, SiparisServisi, SiparisDeposu, BellekSiparisDeposu, BildirimServisi, Siparis
-│   └── gun21/   MetroAgi, Baglanti, Rota
+│   ├── gun21/   MetroAgi, Baglanti, Rota
+│   └── gun22/   LruOnbellek, KisaLruOnbellek
 └── test/java/com/semih/gunluk/
     ├── gun01/   BankaHesabiTest
     ├── gun02/   KelimeSayaciTest
@@ -830,7 +863,8 @@ src/
     ├── gun18/   UyeKaydiTest
     ├── gun19/   DogrulayiciTest
     ├── gun20/   KapsayiciTest
-    └── gun21/   MetroAgiTest
+    ├── gun21/   MetroAgiTest
+    └── gun22/   LruOnbellekTest
 ```
 
 Her yeni gün `gunNN` adında yeni bir paket olarak ekleniyor.

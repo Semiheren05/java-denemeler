@@ -31,6 +31,7 @@ Her gün bir Java alıştırması. Her günün kodu kendi paketinde, birim testl
 | 16 | Hava durumu servisi | decorator (önbellek, tekrar deneme), adapter, factory, kalıtım yerine bileşim, `addSuppressed`, testte elle ilerletilen `Clock` | 10 | [`gun16`](src/main/java/com/semih/gunluk/gun16) |
 | 17 | Doğrulayıcılar | T.C. kimlik no kontrol haneleri, IBAN mod 97 (`BigInteger`'sız), regex adlandırılmış grupları, `matches` vs `find`, `Math.floorMod`, `@NullAndEmptySource` | 10 | [`gun17`](src/main/java/com/semih/gunluk/gun17) |
 | 18 | Üye kaydı | `Sonuc<T>` tipi (`sealed` + generic `record`), istisna yerine dönüş tipiyle hata, `map`/`flatMap`/`katla`, hataları biriktirme ve ilk hatada durma, generic record pattern | 11 | [`gun18`](src/main/java/com/semih/gunluk/gun18) |
+| 19 | Doğrulama kütüphanesi | kendi anotasyonların (`@interface`), `@Retention`/`@Target`, reflection (`getDeclaredFields`, `setAccessible`), record bileşenleri, reflection sonucunu önbelleğe almak | 9 | [`gun19`](src/main/java/com/semih/gunluk/gun19) |
 
 ---
 
@@ -676,6 +677,39 @@ String cevap = switch (sonuc) {
 
 ---
 
+## Gün 19: Dogrulayici (Anotasyonlar ve reflection)
+
+Spring'deki `@NotBlank`, `@Size` ve `@Valid`'in küçük bir benzeri. Kurallar alanların üstüne anotasyon olarak yazılıyor, `Dogrulayici` onları çalışırken reflection ile okuyup uyguluyor.
+
+```java
+public record UyelikFormu(
+        @Zorunlu @Uzunluk(min = 2, max = 50) String ad,
+        @Zorunlu @Desen(value = "[^@\\s]+@[^@\\s]+\\.[a-z]{2,}", mesaj = "geçerli bir e-posta olmalı") String eposta,
+        @Aralik(min = 18, max = 120) int yas,
+        @Desen(value = "\\d{5}", mesaj = "5 haneli olmalı") String postaKodu) {
+}
+
+new Dogrulayici().dogrula(new UyelikFormu("A", "ayse@", 15, "347"));
+// [ad: 2 ile 50 karakter arasında olmalı, eposta: geçerli bir e-posta olmalı,
+//  yas: 18 ile 120 arasında olmalı, postaKodu: 5 haneli olmalı]
+```
+
+**Neler öğrendim:**
+- **Anotasyon tek başına hiçbir şey yapmaz:** `@Zorunlu` sadece bir işaret. Onu okuyup bir şey yapan kod olmazsa etkisi yok. Spring'in anotasyonları da böyle çalışıyor; arkada onları okuyan bir kod var.
+- **`@Retention(RUNTIME)`:** Varsayılan `CLASS`; anotasyon derlenmiş dosyada duruyor ama çalışırken görünmüyor ve `getAnnotation` `null` dönüyor. Testte iki anotasyonu yan yana koyup bunu gösterdim. `@Target(FIELD)` da nereye yazılabileceğini sınırlıyor.
+- **Reflection:** `getDeclaredFields()` sınıfın alanlarını, `field.get(nesne)` değerini veriyor; derleme anında hiç bilinmeyen bir sınıf çalışırken inceleniyor. `private` alanı okumak için `setAccessible(true)` gerekiyor.
+- **Record'larda sıra:** `getDeclaredFields()` sıra garantisi vermiyor; record'larda `getRecordComponents()` sırası garanti, hatalar ona göre diziliyor. Record bileşenine yazılan anotasyon `@Target(FIELD)` sayesinde gizli alana da geçiyor.
+- **Reflection pahalı:** Her sınıfın kurallı alanları bir kez bulunup `ConcurrentHashMap`'te saklanıyor. 1.001 doğrulamada reflection sadece iki kez (iki sınıf için) çalışıyor; bunun testi var.
+
+| Dosya | Görevi |
+|---|---|
+| `Dogrulayici` | Alanları tarar, kuralları uygular, sınıf bilgisini önbelleğe alır |
+| `Zorunlu`, `Uzunluk`, `Aralik`, `Desen` | Kural anotasyonları |
+| `Ihlal` | Alan adı ve mesaj (`record`) |
+| `UyelikFormu` | Örnek form |
+
+---
+
 ## Proje yapısı
 
 ```
@@ -698,7 +732,8 @@ src/
 │   ├── gun15/   Depo, OlayYayini, Abonelik, StokOlayi
 │   ├── gun16/   HavaDurumuServisi, YabanciApiAdaptoru, OnbellekliServis, TekrarDeneyenServis, HavaDurumuServisleri
 │   ├── gun17/   TcKimlikNo, Iban, Telefon
-│   └── gun18/   Sonuc, UyeKaydi, KayitFormu, Uye
+│   ├── gun18/   Sonuc, UyeKaydi, KayitFormu, Uye
+│   └── gun19/   Dogrulayici, Zorunlu, Uzunluk, Aralik, Desen, Ihlal, UyelikFormu
 └── test/java/com/semih/gunluk/
     ├── gun01/   BankaHesabiTest
     ├── gun02/   KelimeSayaciTest
@@ -717,7 +752,8 @@ src/
     ├── gun15/   DepoTest
     ├── gun16/   HavaDurumuServisiTest, AyarlanabilirSaat
     ├── gun17/   DogrulayicilarTest
-    └── gun18/   UyeKaydiTest
+    ├── gun18/   UyeKaydiTest
+    └── gun19/   DogrulayiciTest
 ```
 
 Her yeni gün `gunNN` adında yeni bir paket olarak ekleniyor.

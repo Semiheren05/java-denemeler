@@ -32,6 +32,7 @@ Her gün bir Java alıştırması. Her günün kodu kendi paketinde, birim testl
 | 17 | Doğrulayıcılar | T.C. kimlik no kontrol haneleri, IBAN mod 97 (`BigInteger`'sız), regex adlandırılmış grupları, `matches` vs `find`, `Math.floorMod`, `@NullAndEmptySource` | 10 | [`gun17`](src/main/java/com/semih/gunluk/gun17) |
 | 18 | Üye kaydı | `Sonuc<T>` tipi (`sealed` + generic `record`), istisna yerine dönüş tipiyle hata, `map`/`flatMap`/`katla`, hataları biriktirme ve ilk hatada durma, generic record pattern | 11 | [`gun18`](src/main/java/com/semih/gunluk/gun18) |
 | 19 | Doğrulama kütüphanesi | kendi anotasyonların (`@interface`), `@Retention`/`@Target`, reflection (`getDeclaredFields`, `setAccessible`), record bileşenleri, reflection sonucunu önbelleğe almak | 9 | [`gun19`](src/main/java/com/semih/gunluk/gun19) |
+| 20 | Mini DI kapsayıcısı | bağımlılık enjeksiyonu, constructor reflection, singleton, arayüz bağlama, döngüsel bağımlılık tespiti, `SequencedSet`, `InvocationTargetException` | 10 | [`gun20`](src/main/java/com/semih/gunluk/gun20) |
 
 ---
 
@@ -710,6 +711,43 @@ new Dogrulayici().dogrula(new UyelikFormu("A", "ayse@", 15, "347"));
 
 ---
 
+## Gün 20: Kapsayici (Spring'siz bağımlılık enjeksiyonu)
+
+Spring'in `ApplicationContext`'inin çok küçük bir benzeri. Sınıflar ihtiyaç duydukları nesneleri `new` ile kendileri oluşturmuyor, constructor'da istiyor; kapsayıcı reflection ile bakıp hepsini doğru sırayla kuruyor.
+
+```java
+public class SiparisServisi {
+    public SiparisServisi(SiparisDeposu depo, BildirimServisi bildirimler) { ... }
+}
+
+Kapsayici kapsayici = new Kapsayici()
+        .bagla(SiparisDeposu.class, BellekSiparisDeposu.class);   // arayüz → uygulama
+
+SiparisServisi servis = kapsayici.getir(SiparisServisi.class);
+servis.siparisVer("Ayşe", "250.00");   // Siparis[no=1, musteri=Ayşe, tutar=250.00]
+kapsayici.getir(BildirimServisi.class).gonderilenler();
+// [Ayşe, 1 numaralı siparişin alındı]: servisin kullandığıyla aynı nesne
+
+new Kapsayici().getir(Tavuk.class);
+// KapsayiciHatasi: Döngüsel bağımlılık: Tavuk → Yumurta → Tavuk
+```
+
+**Neler öğrendim:**
+- **Bağımlılık enjeksiyonu:** `SiparisServisi` hangi depoyla çalışacağını bilmiyor, sadece `SiparisDeposu` arayüzünü istiyor. Üretimde kapsayıcı bellek ya da veritabanı deposunu veriyor, testte elle istediğimi veriyorum. Spring'in `@Autowired`'ı da aslında bunu yapıyor.
+- **Constructor'dan bağımlılık bulmak:** `getConstructors()` ve `getParameterTypes()` hangi tiplerin gerektiğini söylüyor; kapsayıcı önce onları (özyinelemeyle onların bağımlılıklarını da) kurup sonra `newInstance` çağırıyor. Birden fazla constructor varsa `@Enjekte` işaretlisi seçiliyor.
+- **Singleton:** Her tip bir kez kuruluyor ve saklanıyor; servis ile test aynı depo nesnesini görüyor. Spring bean'lerinin varsayılanı da bu.
+- **Döngü tespiti:** Tavuk yumurtayı, yumurta tavuğu isterse sonsuz özyineleme olurdu. Kurulmakta olan tipler bir `SequencedSet`'te (Java 21, sırayı koruyan küme) tutuluyor; bir tip ikinci kez gelirse döngü "Tavuk → Yumurta → Tavuk" diye raporlanıyor. Spring de aynı durumda `BeanCurrentlyInCreationException` veriyor.
+- **`InvocationTargetException`:** Reflection ile çağrılan constructor hata fırlatırsa hata bu sarmalayıcının içinde geliyor; asıl nedeni `getCause()` ile çıkarıp anlaşılır bir mesajla iletiyorum.
+
+| Dosya | Görevi |
+|---|---|
+| `Kapsayici` | Bağlama, kurma, singleton saklama, döngü tespiti |
+| `Enjekte` | Kullanılacak constructor'ı işaretler |
+| `KapsayiciHatasi` | Kurulamayan nesne için hata |
+| `SiparisServisi`, `SiparisDeposu`, `BellekSiparisDeposu`, `BildirimServisi`, `Siparis` | Örnek uygulama |
+
+---
+
 ## Proje yapısı
 
 ```
@@ -733,7 +771,8 @@ src/
 │   ├── gun16/   HavaDurumuServisi, YabanciApiAdaptoru, OnbellekliServis, TekrarDeneyenServis, HavaDurumuServisleri
 │   ├── gun17/   TcKimlikNo, Iban, Telefon
 │   ├── gun18/   Sonuc, UyeKaydi, KayitFormu, Uye
-│   └── gun19/   Dogrulayici, Zorunlu, Uzunluk, Aralik, Desen, Ihlal, UyelikFormu
+│   ├── gun19/   Dogrulayici, Zorunlu, Uzunluk, Aralik, Desen, Ihlal, UyelikFormu
+│   └── gun20/   Kapsayici, Enjekte, KapsayiciHatasi, SiparisServisi, SiparisDeposu, BellekSiparisDeposu, BildirimServisi, Siparis
 └── test/java/com/semih/gunluk/
     ├── gun01/   BankaHesabiTest
     ├── gun02/   KelimeSayaciTest
@@ -753,7 +792,8 @@ src/
     ├── gun16/   HavaDurumuServisiTest, AyarlanabilirSaat
     ├── gun17/   DogrulayicilarTest
     ├── gun18/   UyeKaydiTest
-    └── gun19/   DogrulayiciTest
+    ├── gun19/   DogrulayiciTest
+    └── gun20/   KapsayiciTest
 ```
 
 Her yeni gün `gunNN` adında yeni bir paket olarak ekleniyor.

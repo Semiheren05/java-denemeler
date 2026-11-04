@@ -35,6 +35,7 @@ Her gün bir Java alıştırması. Her günün kodu kendi paketinde, birim testl
 | 20 | Mini DI kapsayıcısı | bağımlılık enjeksiyonu, constructor reflection, singleton, arayüz bağlama, döngüsel bağımlılık tespiti, `SequencedSet`, `InvocationTargetException` | 10 | [`gun20`](src/main/java/com/semih/gunluk/gun20) |
 | 21 | Metro rota planlayıcı | graf, komşuluk listesi, Dijkstra (`PriorityQueue`), BFS, yol geri izleme, Floyd-Warshall ile karşılaştırmalı rastgele test | 9 | [`gun21`](src/main/java/com/semih/gunluk/gun21) |
 | 22 | LRU önbellek | `HashMap` + çift yönlü bağlı liste ile O(1), bekçi düğümler, `LinkedHashMap` `accessOrder` ve `removeEldestEntry`, isabet oranı | 10 | [`gun22`](src/main/java/com/semih/gunluk/gun22) |
+| 23 | Not defteri API'si | JDK `HttpServer` ile Spring'siz REST, durum kodları (201, 204, 400, 404, 405, 413), `Location`/`Allow` başlıkları, elle JSON kaçışı, `HttpClient` ve `sendAsync` | 9 | [`gun23`](src/main/java/com/semih/gunluk/gun23) |
 
 ---
 
@@ -815,6 +816,37 @@ onbellek.isabetOrani();      // 0.5
 
 ---
 
+## Gün 23: NotDefteriSunucusu (Spring'siz HTTP: `HttpServer` ve `HttpClient`)
+
+JDK'nın içinde gelen `HttpServer` ile küçük bir REST API. Spring Boot'un bizim yerimize yaptıklarını (yolu ayırmak, metoda göre dallanmak, durum kodu, başlıklar, JSON) burada elle yapıyorum. Testler gerçek bir sunucu açıp Java'nın `HttpClient`'ıyla istek atıyor.
+
+```text
+POST   /notlar        "Spring Boot'a çalış"   → 201, Location: /notlar/1
+                                                 {"id":1,"metin":"Spring Boot'a çalış"}
+GET    /notlar                                → 200  [{"id":1,"metin":"Spring Boot'a çalış"}]
+GET    /notlar/99                             → 404  {"hata":"99 numaralı not yok"}
+DELETE /notlar/1                              → 204  (gövde yok)
+PUT    /notlar                                → 405, Allow: GET, POST
+POST   /notlar        "   "                   → 400  {"hata":"Not boş olamaz"}
+POST   /notlar        (1001 karakter)         → 413
+```
+
+**Neler öğrendim:**
+- **Durum kodları anlam taşıyor:** Oluşturunca `201` ve yeni kaydın adresi `Location` başlığında; silince `204` ve gövde yok; yanlış metotta `405` ve `Allow` başlığında geçerli metotlar; çok büyük gövdede `413`. Hepsi `200` dönen bir API'de istemci sonucu anlamak için gövdeyi okumak zorunda kalır.
+- **JSON'u elle yazmak tehlikeli:** Metni tırnak içine olduğu gibi koyunca içindeki `"` JSON'u bozuyor, hatta araya sahte alan eklenebiliyor. Tırnak, ters bölü ve satır sonu kaçış dizisine çevriliyor; bunun testi var. Jackson'ın neden var olduğunu anladım.
+- **Uzunluk bayt cinsinden:** `sendResponseHeaders`'a verilen uzunluk karakter değil bayt sayısı; "ş" UTF-8'de 2 bayt. Karakter sayısı verilseydi Türkçe harfli cevaplar kesik giderdi.
+- **Son çare hata yakalayıcı:** Beklenmeyen bir hata olursa `500` ve genel bir mesaj dönüyor, iç ayrıntı dışarı çıkmıyor. Spring'deki `@ExceptionHandler(Exception.class)`'ın elle yazılmışı.
+- **Testte port 0:** Sunucu `0` portuyla açılınca işletim sistemi boş bir port seçiyor; testler sabit bir portla çakışmıyor. `@AfterEach` her testten sonra sunucuyu kapatıyor.
+- **Eşzamanlılık bir arada:** Sunucu her isteği bir virtual thread'de işliyor (Gün 14), notlar `ConcurrentHashMap`'te, numaralar `AtomicLong`'dan (Gün 13). Testte `HttpClient.sendAsync` ile 100 istek birden gönderip numaraların çakışmadığını doğruluyorum.
+
+| Dosya | Görevi |
+|---|---|
+| `NotDefteriSunucusu` | Sunucu, yönlendirme, durum kodları, başlıklar |
+| `Not` | Not numarası ve metni (`record`) |
+| `Json` | Metin kaçışı ve hata gövdesi |
+
+---
+
 ## Proje yapısı
 
 ```
@@ -841,7 +873,8 @@ src/
 │   ├── gun19/   Dogrulayici, Zorunlu, Uzunluk, Aralik, Desen, Ihlal, UyelikFormu
 │   ├── gun20/   Kapsayici, Enjekte, KapsayiciHatasi, SiparisServisi, SiparisDeposu, BellekSiparisDeposu, BildirimServisi, Siparis
 │   ├── gun21/   MetroAgi, Baglanti, Rota
-│   └── gun22/   LruOnbellek, KisaLruOnbellek
+│   ├── gun22/   LruOnbellek, KisaLruOnbellek
+│   └── gun23/   NotDefteriSunucusu, Not, Json
 └── test/java/com/semih/gunluk/
     ├── gun01/   BankaHesabiTest
     ├── gun02/   KelimeSayaciTest
@@ -864,7 +897,8 @@ src/
     ├── gun19/   DogrulayiciTest
     ├── gun20/   KapsayiciTest
     ├── gun21/   MetroAgiTest
-    └── gun22/   LruOnbellekTest
+    ├── gun22/   LruOnbellekTest
+    └── gun23/   NotDefteriSunucusuTest
 ```
 
 Her yeni gün `gunNN` adında yeni bir paket olarak ekleniyor.

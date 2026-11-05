@@ -37,6 +37,7 @@ Her gün bir Java alıştırması. Her günün kodu kendi paketinde, birim testl
 | 22 | LRU önbellek | `HashMap` + çift yönlü bağlı liste ile O(1), bekçi düğümler, `LinkedHashMap` `accessOrder` ve `removeEldestEntry`, isabet oranı | 10 | [`gun22`](src/main/java/com/semih/gunluk/gun22) |
 | 23 | Not defteri API'si | JDK `HttpServer` ile Spring'siz REST, durum kodları (201, 204, 400, 404, 405, 413), `Location`/`Allow` başlıkları, elle JSON kaçışı, `HttpClient` ve `sendAsync` | 9 | [`gun23`](src/main/java/com/semih/gunluk/gun23) |
 | 24 | Otomatik tamamlama | Trie (önek ağacı), en iyi k için `PriorityQueue` yığını, düğümde ön hesaplanmış sayaç, silerken boş dalları budamak, Türkçe küçük harf | 11 | [`gun24`](src/main/java/com/semih/gunluk/gun24) |
+| 25 | JSON ayrıştırıcı | özyinelemeli iniş (recursive descent), `sealed` değer ağacı, kaçış dizileri ve `\u` kodları, satır/sütunlu hata, derinlik sınırı, `BigDecimal` ile hassas sayı, gidiş-dönüş testi | 11 | [`gun25`](src/main/java/com/semih/gunluk/gun25) |
 
 ---
 
@@ -879,6 +880,43 @@ tamamlama.iceriyorMu("ist");   // false: ağaçta bir yol, ama kelime değil
 
 ---
 
+## Gün 25: JsonAyristirici (Kütüphanesiz JSON)
+
+Jackson kullanmadan JSON metnini bir değer ağacına çeviren ayrıştırıcı ve ağacı tekrar metne çeviren yazıcı.
+
+```java
+JsonDegeri kok = JsonAyristirici.ayristir("{ \"ad\": \"Ayşe\", \"diller\": [\"Java\", \"SQL\"], \"yas\": 27 }");
+// Nesne[alanlar={ad=Metin[deger=Ayşe], diller=Dizi[elemanlar=[Metin[deger=Java], Metin[deger=SQL]]],
+//                yas=Sayi[deger=27]}]
+
+JsonYazici.yaz(kok);   // {"ad":"Ayşe","diller":["Java","SQL"],"yas":27}
+
+JsonAyristirici.ayristir("""
+        {
+          "ad": "Ayşe",
+          "yas": 27
+          "sehir": "İzmir"
+        }""");
+// JsonHatasi: 4. satır, 3. sütun: ',' ya da '}' bekleniyordu
+```
+
+**Neler öğrendim:**
+- **Özyinelemeli iniş:** JSON'un dilbilgisindeki her kural için bir metot var (`nesne()`, `dizi()`, `metin()`, `sayi()`). `deger()` sıradaki karaktere bakıp hangisinin çağrılacağına karar veriyor: `{` ise nesne, `[` ise dizi. Nesnenin içinde yine `deger()` çağrıldığı için iç içe yapılar kendiliğinden çözülüyor.
+- **`sealed` değer ağacı:** JSON'da altı tür var: nesne, dizi, metin, sayı, mantıksal ve `null`. `JsonDegeri` sadece bunlar olabiliyor; yazıcıdaki `switch` altısını da ele aldığı için `default` yok. `null` için tek örneği olan bir `enum` kullandım.
+- **Sayılar `double` değil `BigDecimal`:** `double` ile "12345678901234567890" okunup yazılınca son haneler bozulur, "0.1" de tam saklanamaz. JSON'un sayı kuralı da katı: "01", "+1", "1." ve ".5" geçersiz; hepsinin testi var.
+- **İyi hata mesajı:** "Geçersiz JSON" yerine "4. satır, 3. sütun: ',' ya da '}' bekleniyordu". Konum karakter sırası olarak tutuluyor, hata anında satır ve sütuna çevriliyor.
+- **Kötü niyetli girdi:** `[[[[...` diye 100.000 kez iç içe açılan bir girdi, özyinelemeli bir ayrıştırıcıda `StackOverflowError` ile bütün uygulamayı düşürebilir. 200 seviyelik bir sınır var. Aynı alanın iki kez yazılması da reddediliyor; JSON standardı bunu tanımsız bırakıyor.
+- **Gidiş-dönüş testi:** `yaz(ayristir(json))` ilk metni aynen vermeli. Ayrıştırıcıyla yazıcıyı birbirine karşı test etmenin kolay bir yolu.
+
+| Dosya | Görevi |
+|---|---|
+| `JsonAyristirici` | Metin → değer ağacı (özyinelemeli iniş) |
+| `JsonYazici` | Değer ağacı → metin |
+| `JsonDegeri` | `Nesne`, `Dizi`, `Metin`, `Sayi`, `Mantiksal`, `Bos` (`sealed interface`) |
+| `JsonHatasi` | Satır ve sütunlu ayrıştırma hatası |
+
+---
+
 ## Proje yapısı
 
 ```
@@ -907,7 +945,8 @@ src/
 │   ├── gun21/   MetroAgi, Baglanti, Rota
 │   ├── gun22/   LruOnbellek, KisaLruOnbellek
 │   ├── gun23/   NotDefteriSunucusu, Not, Json
-│   └── gun24/   OtomatikTamamlama, Oneri
+│   ├── gun24/   OtomatikTamamlama, Oneri
+│   └── gun25/   JsonAyristirici, JsonYazici, JsonDegeri, JsonHatasi
 └── test/java/com/semih/gunluk/
     ├── gun01/   BankaHesabiTest
     ├── gun02/   KelimeSayaciTest
@@ -932,7 +971,8 @@ src/
     ├── gun21/   MetroAgiTest
     ├── gun22/   LruOnbellekTest
     ├── gun23/   NotDefteriSunucusuTest
-    └── gun24/   OtomatikTamamlamaTest
+    ├── gun24/   OtomatikTamamlamaTest
+    └── gun25/   JsonAyristiriciTest
 ```
 
 Her yeni gün `gunNN` adında yeni bir paket olarak ekleniyor.

@@ -36,6 +36,7 @@ Her gün bir Java alıştırması. Her günün kodu kendi paketinde, birim testl
 | 21 | Metro rota planlayıcı | graf, komşuluk listesi, Dijkstra (`PriorityQueue`), BFS, yol geri izleme, Floyd-Warshall ile karşılaştırmalı rastgele test | 9 | [`gun21`](src/main/java/com/semih/gunluk/gun21) |
 | 22 | LRU önbellek | `HashMap` + çift yönlü bağlı liste ile O(1), bekçi düğümler, `LinkedHashMap` `accessOrder` ve `removeEldestEntry`, isabet oranı | 10 | [`gun22`](src/main/java/com/semih/gunluk/gun22) |
 | 23 | Not defteri API'si | JDK `HttpServer` ile Spring'siz REST, durum kodları (201, 204, 400, 404, 405, 413), `Location`/`Allow` başlıkları, elle JSON kaçışı, `HttpClient` ve `sendAsync` | 9 | [`gun23`](src/main/java/com/semih/gunluk/gun23) |
+| 24 | Otomatik tamamlama | Trie (önek ağacı), en iyi k için `PriorityQueue` yığını, düğümde ön hesaplanmış sayaç, silerken boş dalları budamak, Türkçe küçük harf | 11 | [`gun24`](src/main/java/com/semih/gunluk/gun24) |
 
 ---
 
@@ -847,6 +848,37 @@ POST   /notlar        (1001 karakter)         → 413
 
 ---
 
+## Gün 24: OtomatikTamamlama (Trie ve en iyi k)
+
+Bir arama kutusu için otomatik tamamlama: "ist" yazılınca en çok arananlar önce olmak üzere "istanbul", "istasyon"...
+
+```java
+OtomatikTamamlama tamamlama = new OtomatikTamamlama();
+tamamlama.ara("istanbul");   // (5 kez)
+tamamlama.ara("istasyon");   // (2 kez)
+tamamlama.ara("istek");      // (2 kez)
+tamamlama.ara("izmir");      // (4 kez)
+
+tamamlama.oneriler("İst", 2);
+// [Oneri[kelime=istanbul, siklik=5], Oneri[kelime=istasyon, siklik=2]]
+tamamlama.onekSayisi("ist");   // 3
+tamamlama.iceriyorMu("ist");   // false: ağaçta bir yol, ama kelime değil
+```
+
+**Neler öğrendim:**
+- **Trie (önek ağacı):** Her düğüm bir harf, kökten bir düğüme giden yol bir önek. "istanbul" ile "istasyon" "ista" kısmını paylaşıyor. Bir önekle başlayan kelimelere ulaşmak, kaç kelime olursa olsun önek uzunluğu kadar adım; listede her kelimeye `startsWith` sormak bütün listeyi gezmek demek.
+- **Düğümde hazır sayaç:** Her düğüm kendisinden geçen kelime sayısını tutuyor; "ist ile kaç kelime başlıyor?" sorusu alt ağacı gezmeden önek uzunluğu kadar adımda cevaplanıyor. Bedeli, ekleme ve silmede yol boyunca sayaçları güncellemek.
+- **En iyi k için yığın:** Bütün adayları sıralamak yerine k boyutlu bir `PriorityQueue` tutuyorum; tepede en kötüsü duruyor, yeni gelen daha iyiyse en kötü atılıyor. 1.000 aday arasından 5 öneri için 1.000 elemanlı sıralama yok.
+- **Silerken budamak:** Silinen kelimenin artık başka hiçbir kelimenin parçası olmayan harfleri ağaçtan koparılıyor; yoksa boş dallar birikirdi. Başka kelimenin öneki olan bir kelime ("is") silinince hiçbir düğüm atılmıyor, sadece "burada kelime bitiyor" işareti kalkıyor. İkisinin de testi var.
+- **Türkçe küçük harf:** `toLowerCase(Locale.forLanguageTag("tr-TR"))`: "I" → "ı", "İ" → "i". Varsayılan dil ayarına bırakılsa "IĞDIR" yanlış küçülürdü.
+
+| Dosya | Görevi |
+|---|---|
+| `OtomatikTamamlama` | Trie, öneriler, önek sayısı, silme |
+| `Oneri` | Kelime ve aranma sayısı (`record`) |
+
+---
+
 ## Proje yapısı
 
 ```
@@ -874,7 +906,8 @@ src/
 │   ├── gun20/   Kapsayici, Enjekte, KapsayiciHatasi, SiparisServisi, SiparisDeposu, BellekSiparisDeposu, BildirimServisi, Siparis
 │   ├── gun21/   MetroAgi, Baglanti, Rota
 │   ├── gun22/   LruOnbellek, KisaLruOnbellek
-│   └── gun23/   NotDefteriSunucusu, Not, Json
+│   ├── gun23/   NotDefteriSunucusu, Not, Json
+│   └── gun24/   OtomatikTamamlama, Oneri
 └── test/java/com/semih/gunluk/
     ├── gun01/   BankaHesabiTest
     ├── gun02/   KelimeSayaciTest
@@ -898,7 +931,8 @@ src/
     ├── gun20/   KapsayiciTest
     ├── gun21/   MetroAgiTest
     ├── gun22/   LruOnbellekTest
-    └── gun23/   NotDefteriSunucusuTest
+    ├── gun23/   NotDefteriSunucusuTest
+    └── gun24/   OtomatikTamamlamaTest
 ```
 
 Her yeni gün `gunNN` adında yeni bir paket olarak ekleniyor.

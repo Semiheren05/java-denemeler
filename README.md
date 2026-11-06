@@ -38,6 +38,7 @@ Her gün bir Java alıştırması. Her günün kodu kendi paketinde, birim testl
 | 23 | Not defteri API'si | JDK `HttpServer` ile Spring'siz REST, durum kodları (201, 204, 400, 404, 405, 413), `Location`/`Allow` başlıkları, elle JSON kaçışı, `HttpClient` ve `sendAsync` | 9 | [`gun23`](src/main/java/com/semih/gunluk/gun23) |
 | 24 | Otomatik tamamlama | Trie (önek ağacı), en iyi k için `PriorityQueue` yığını, düğümde ön hesaplanmış sayaç, silerken boş dalları budamak, Türkçe küçük harf | 11 | [`gun24`](src/main/java/com/semih/gunluk/gun24) |
 | 25 | JSON ayrıştırıcı | özyinelemeli iniş (recursive descent), `sealed` değer ağacı, kaçış dizileri ve `\u` kodları, satır/sütunlu hata, derinlik sınırı, `BigDecimal` ile hassas sayı, gidiş-dönüş testi | 11 | [`gun25`](src/main/java/com/semih/gunluk/gun25) |
+| 26 | Sipariş durum makinesi | `enum` ile durum makinesi, izinli geçişler, `EnumSet` (`range`, `complementOf`), `EnumMap`, sabite özel gövde, ek kurallı geçiş (14 gün iade), ulaşılabilirlik testi | 10 | [`gun26`](src/main/java/com/semih/gunluk/gun26) |
 
 ---
 
@@ -917,6 +918,44 @@ JsonAyristirici.ayristir("""
 
 ---
 
+## Gün 26: Siparis ve SiparisDurumu (Enum ile durum makinesi)
+
+Bir siparişin hangi durumdan hangisine geçebileceği kurallı: kargodaki sipariş iptal edilemez, teslim edilmeden iade olmaz, iade 14 günle sınırlı. Bu kurallar dağınık `if`'lerde değil, tek bir `enum`'da.
+
+```text
+OLUSTURULDU → ODENDI → HAZIRLANIYOR → KARGODA → TESLIM_EDILDI → IADE_EDILDI
+     └───────────┴───────────┴──→ IPTAL_EDILDI
+```
+
+```java
+Siparis siparis = new Siparis("SE-1001", Clock.systemUTC());
+siparis.gec(SiparisDurumu.ODENDI, "Kartla ödendi");
+siparis.gec(SiparisDurumu.TESLIM_EDILDI, "Atlayalım");
+// GecersizGecisHatasi: SE-1001: Ödeme onaylandı → Teslim edildi olmaz.
+//                      Buradan gidilebilecekler: [HAZIRLANIYOR, IPTAL_EDILDI]
+
+siparis.iptalEt("Vazgeçtim");   // KARGODA'dan sonra olsaydı hata
+siparis.gecmis();               // her adım: önceki, yeni, zaman, açıklama
+```
+
+**Neler öğrendim:**
+- **Durum makinesi:** `setDurum(...)` yok; durum sadece `gec(...)` ile değişiyor ve her geçiş `enum`'daki kurala göre kontrol ediliyor. Yeni bir durum eklemek tek bir yerde değişiklik demek; kurallar kod tabanına dağılmıyor.
+- **Geçişler neden `switch`'te:** `KARGODA(EnumSet.of(TESLIM_EDILDI))` gibi bir constructor parametresi derlenmiyor; `KARGODA` tanımlanırken `TESLIM_EDILDI` henüz yok (ileri referans). Geçişleri `sonrakiler()` metoduna koyunca sorun kalmıyor; derleyici bütün durumların ele alındığını da kontrol ediyor.
+- **`EnumSet`:** İçeride tek bir `long`'un bitleri; `contains` bir bit kontrolü. `EnumSet.range(OLUSTURULDU, HAZIRLANIYOR)` sıradaki ilk üç durumu, `complementOf` "geri kalan hepsi"ni veriyor.
+- **`EnumMap`:** Anahtarı enum olan bir harita; içeride `ordinal` sırasına göre bir dizi. `HashMap`'ten hızlı ve tanım sırasıyla dolaşılıyor; paneldeki durum sayıları hep aynı sırada.
+- **Sabite özel gövde:** `IPTAL_EDILDI { ... }` sadece o sabit için metodu eziyor; iptal mesajı farklı, diğerleri ortak metodu kullanıyor. Bu sabit kendi anonim alt sınıfı oluyor (`getClass()` farklı, `getDeclaringClass()` aynı).
+- **Ölü durum testi:** Grafı BFS ile gezip (Gün 21) her duruma başlangıçtan ulaşılabildiğini test ediyorum; yanlışlıkla ulaşılamaz bir durum eklenirse test kırılıyor.
+
+| Dosya | Görevi |
+|---|---|
+| `SiparisDurumu` | Durumlar, izinli geçişler, görünen ad, müşteri mesajı (`enum`) |
+| `Siparis` | Kurallı geçiş, iptal, 14 günlük iade, geçmiş |
+| `DurumDegisimi` | Önceki, yeni, zaman, açıklama (`record`) |
+| `GecersizGecisHatasi` | İzinsiz geçiş için hata |
+| `SiparisPaneli` | Durum sayıları (`EnumMap`), açık durumlar (`EnumSet.complementOf`) |
+
+---
+
 ## Proje yapısı
 
 ```
@@ -946,7 +985,8 @@ src/
 │   ├── gun22/   LruOnbellek, KisaLruOnbellek
 │   ├── gun23/   NotDefteriSunucusu, Not, Json
 │   ├── gun24/   OtomatikTamamlama, Oneri
-│   └── gun25/   JsonAyristirici, JsonYazici, JsonDegeri, JsonHatasi
+│   ├── gun25/   JsonAyristirici, JsonYazici, JsonDegeri, JsonHatasi
+│   └── gun26/   Siparis, SiparisDurumu, DurumDegisimi, GecersizGecisHatasi, SiparisPaneli
 └── test/java/com/semih/gunluk/
     ├── gun01/   BankaHesabiTest
     ├── gun02/   KelimeSayaciTest
@@ -972,7 +1012,8 @@ src/
     ├── gun22/   LruOnbellekTest
     ├── gun23/   NotDefteriSunucusuTest
     ├── gun24/   OtomatikTamamlamaTest
-    └── gun25/   JsonAyristiriciTest
+    ├── gun25/   JsonAyristiriciTest
+    └── gun26/   SiparisDurumuTest, AyarlanabilirSaat
 ```
 
 Her yeni gün `gunNN` adında yeni bir paket olarak ekleniyor.

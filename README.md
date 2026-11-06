@@ -39,6 +39,7 @@ Her gün bir Java alıştırması. Her günün kodu kendi paketinde, birim testl
 | 24 | Otomatik tamamlama | Trie (önek ağacı), en iyi k için `PriorityQueue` yığını, düğümde ön hesaplanmış sayaç, silerken boş dalları budamak, Türkçe küçük harf | 11 | [`gun24`](src/main/java/com/semih/gunluk/gun24) |
 | 25 | JSON ayrıştırıcı | özyinelemeli iniş (recursive descent), `sealed` değer ağacı, kaçış dizileri ve `\u` kodları, satır/sütunlu hata, derinlik sınırı, `BigDecimal` ile hassas sayı, gidiş-dönüş testi | 11 | [`gun25`](src/main/java/com/semih/gunluk/gun25) |
 | 26 | Sipariş durum makinesi | `enum` ile durum makinesi, izinli geçişler, `EnumSet` (`range`, `complementOf`), `EnumMap`, sabite özel gövde, ek kurallı geçiş (14 gün iade), ulaşılabilirlik testi | 10 | [`gun26`](src/main/java/com/semih/gunluk/gun26) |
+| 27 | Bloom filtresi | olasılıklı veri yapısı, `BitSet`, tek hash'ten k hash (Kirsch–Mitzenmacher), 64 bitlik FNV-1a + SplitMix64, boyut ve yanılma oranı formülleri, ölçülen oranı formülle karşılaştırmak | 10 | [`gun27`](src/main/java/com/semih/gunluk/gun27) |
 
 ---
 
@@ -956,6 +957,38 @@ siparis.gecmis();               // her adım: önceki, yeni, zaman, açıklama
 
 ---
 
+## Gün 27: BloomFiltresi (Olasılıklı veri yapısı)
+
+"Bu kullanıcı adı alınmış mı?" sorusuna veritabanına gitmeden, çok az bellekle cevap veren bir küme. Cevabı `false` ise kelime **kesinlikle** yok; `true` ise **muhtemelen** var. Ara sıra, ayarlanan oranda yanılıyor; o zaman veritabanına sormak gerekiyor.
+
+```java
+BloomFiltresi filtre = BloomFiltresi.icin(10_000, 0.01);   // 10.000 kullanıcı adı, %1 yanılma
+filtre.bitSayisi();    // 95851 bit (≈ 12 KB)
+filtre.hashSayisi();   // 7
+
+for (int i = 0; i < 10_000; i++) filtre.ekle("kullanici" + i);
+
+filtre.belkiVar("kullanici42");   // true: eklenmişti
+filtre.belkiVar("semih");         // false: kesinlikle eklenmemiş
+
+// 100.000 hiç eklenmemiş kelimeyle ölçüm:
+// yanılma %1,007 (formülün tahmini %1,004), bitlerin %51,8'i dolu
+```
+
+**Neler öğrendim:**
+- **Nasıl çalışıyor:** m bitlik bir dizi ve k hash fonksiyonu. Eklerken kelimenin k hash'inin gösterdiği k bit 1 yapılıyor; sorarken k bitin hepsine bakılıyor. Biri bile 0'sa kelime hiç eklenmemiş. Hepsi 1 ise ya eklenmiş ya da başka kelimeler o bitleri tesadüfen 1 yapmış. Bu yüzden yanlış negatif hiç olmuyor, yanlış pozitif oluyor.
+- **Çok az bellek:** Kelimeler saklanmıyor, sadece bitler. 1 milyon kullanıcı adı %1 yanılmayla 9,6 milyon bitte (≈ 1,2 MB) duruyor; aynı adlar bir `HashSet<String>`'te onlarca MB tutar. Bedeli: silme yok, listeleme yok, ara sıra "belki".
+- **Boyut formülden:** `m = −n·ln(p) / (ln 2)²` ve `k = (m/n)·ln 2`. 1.000 eleman ve %1 için 9.586 bit ve 7 hash. Doğru k seçilince filtre dolduğunda bitlerin yarısı 1 oluyor; testte ölçüyorum.
+- **Tek hash'ten k hash:** 7 ayrı hash fonksiyonu yazmak yerine 64 bitlik tek bir hash'in iki yarısından `h1 + i·h2` ile yedi konum türetiliyor (Kirsch–Mitzenmacher). `String.hashCode()` yetmiyor: 32 bit ve "Aa" ile "BB" aynı sonucu veriyor. Onun yerine FNV-1a ve bitleri karıştıran SplitMix64 son adımı var.
+- **`BitSet`:** Bitleri `long` dizisinde paketleyip tutuyor; `set`, `get` ve 1 olan bitleri sayan `cardinality` hazır. İki filtrenin birleşimi tek bir `or`.
+- **Kapasiteyi aşmak:** Beklenenin beş katı eleman eklenince bitlerin %95'inden fazlası doluyor ve filtre neredeyse her şeye "belki" diyor. Bu yüzden boyut baştan doğru seçilmeli.
+
+| Dosya | Görevi |
+|---|---|
+| `BloomFiltresi` | Boyut hesabı, ekleme, sorgu, yanılma tahmini, birleşim, 64 bitlik hash |
+
+---
+
 ## Proje yapısı
 
 ```
@@ -986,7 +1019,8 @@ src/
 │   ├── gun23/   NotDefteriSunucusu, Not, Json
 │   ├── gun24/   OtomatikTamamlama, Oneri
 │   ├── gun25/   JsonAyristirici, JsonYazici, JsonDegeri, JsonHatasi
-│   └── gun26/   Siparis, SiparisDurumu, DurumDegisimi, GecersizGecisHatasi, SiparisPaneli
+│   ├── gun26/   Siparis, SiparisDurumu, DurumDegisimi, GecersizGecisHatasi, SiparisPaneli
+│   └── gun27/   BloomFiltresi
 └── test/java/com/semih/gunluk/
     ├── gun01/   BankaHesabiTest
     ├── gun02/   KelimeSayaciTest
@@ -1013,7 +1047,8 @@ src/
     ├── gun23/   NotDefteriSunucusuTest
     ├── gun24/   OtomatikTamamlamaTest
     ├── gun25/   JsonAyristiriciTest
-    └── gun26/   SiparisDurumuTest, AyarlanabilirSaat
+    ├── gun26/   SiparisDurumuTest, AyarlanabilirSaat
+    └── gun27/   BloomFiltresiTest
 ```
 
 Her yeni gün `gunNN` adında yeni bir paket olarak ekleniyor.

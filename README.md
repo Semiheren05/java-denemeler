@@ -40,6 +40,7 @@ Her gün bir Java alıştırması. Her günün kodu kendi paketinde, birim testl
 | 25 | JSON ayrıştırıcı | özyinelemeli iniş (recursive descent), `sealed` değer ağacı, kaçış dizileri ve `\u` kodları, satır/sütunlu hata, derinlik sınırı, `BigDecimal` ile hassas sayı, gidiş-dönüş testi | 11 | [`gun25`](src/main/java/com/semih/gunluk/gun25) |
 | 26 | Sipariş durum makinesi | `enum` ile durum makinesi, izinli geçişler, `EnumSet` (`range`, `complementOf`), `EnumMap`, sabite özel gövde, ek kurallı geçiş (14 gün iade), ulaşılabilirlik testi | 10 | [`gun26`](src/main/java/com/semih/gunluk/gun26) |
 | 27 | Bloom filtresi | olasılıklı veri yapısı, `BitSet`, tek hash'ten k hash (Kirsch–Mitzenmacher), 64 bitlik FNV-1a + SplitMix64, boyut ve yanılma oranı formülleri, ölçülen oranı formülle karşılaştırmak | 10 | [`gun27`](src/main/java/com/semih/gunluk/gun27) |
+| 28 | Bellek ve değerle geçirme | stack ve heap, Java'nın her zaman değerle geçirmesi, referansın kopyası, aliasing ve savunmacı kopya, `final`'ın sınırı, String havuzu ve `intern`, `Integer` önbelleği, `StackOverflowError` | 10 | [`gun28`](src/main/java/com/semih/gunluk/gun28) |
 
 ---
 
@@ -989,6 +990,48 @@ filtre.belkiVar("semih");         // false: kesinlikle eklenmemiş
 
 ---
 
+## Gün 28: SepetIslemleri ve Kampanya (Bellek ve değerle geçirme)
+
+Mülakatın klasik sorusu: "Java referansla mı geçirir, değerle mi?" Cevap: **her zaman değerle.** Ama referans tipinde kopyalanan değer nesnenin kendisi değil, adresi. Bu gün o farkı testlerle gösteriyor.
+
+```text
+  stack (çağıran)          heap
+  sepet ──────────────►  [Sepet: Klavye, Mouse]
+  stack (metot)            ▲
+  s     ─────────────────┘   aynı adresin kopyası
+```
+
+```java
+Sepet sepet = new Sepet();
+sepet.ekle("Klavye");
+
+SepetIslemleri.hediyeEkle(sepet);    // s.ekle(...): nesnenin içi değişti, çağıran görür
+SepetIslemleri.yanlisBosalt(sepet);  // s = new Sepet(): sadece metodun kopyası değişti
+sepet.urunler();                     // [Klavye, Hediye paketi]: boşalmadı
+
+List<String> liste = new ArrayList<>(List.of("Kalem"));
+HataliKampanya hatali = new HataliKampanya(liste);   // listeyi kopyalamadan saklıyor
+liste.add("Defter");
+hatali.kapsiyorMu("Defter");          // true: kampanya habersizce değişti
+```
+
+**Neler öğrendim:**
+- **Değerle geçirme:** Metoda giden her parametre kopyalanıyor. İlkel tipte kopya sayının kendisi; referans tipinde nesnenin adresi. Metot o adres üzerinden nesnenin **içini** değiştirebiliyor, ama parametresine yeni bir nesne atarsa çağıranın değişkeni etkilenmiyor. Java'da C++'taki gibi bir `swap(a, b)` yazılamamasının sebebi bu.
+- **Stack ve heap:** Yerel değişkenler ve parametreler thread'in stack'inde, `new` ile kurulan nesneler heap'te. Stack her çağrıda bir çerçeve büyüyor; özyinelemede 10 milyon seviye `StackOverflowError` veriyor, aynı toplam döngüyle tek çerçevede bitiyor. Testte 512 MB stack'li bir `Thread` kurup aynı özyinelemeyi 1 milyon seviyede çalıştırdım: stack boyutu thread başına ayarlanabiliyor.
+- **Aliasing ve savunmacı kopya:** İki değişken aynı nesneyi gösteriyorsa biri değişince öteki de "değişiyor". Dışarıdan gelen listeyi saklarken `List.copyOf` ile kopyalamak şart. `final` sadece alanın başka bir listeye yönlendirilmesini engelliyor, listenin içini dondurmuyor.
+- **String havuzu:** `"sem" + "ih"` derleme anında birleşiyor ve havuzdaki `"semih"` ile aynı nesne (`==` true). `new String("semih")` ve çalışma anında birleştirilen metin yeni nesne; `intern()` havuzdakini döndürüyor. Ders: String'i her zaman `equals` ile karşılaştır.
+- **`Integer` önbelleği:** `Integer.valueOf` −128 ile 127 arasını önbellekten veriyor; `127 == 127` true, `128 == 128` false. Kutulanmış sayıyı da `equals` ile karşılaştır. `null` bir `Integer`'ı `int`'e açmak `NullPointerException`.
+
+| Dosya | Görevi |
+|---|---|
+| `Sepet` | İçi değişebilen örnek nesne |
+| `SepetIslemleri` | İçi değiştirmek, parametreye yeni nesne atamak (bilerek hatalı), ilkel tip kopyası |
+| `HataliKampanya` | Listeyi kopyalamadan saklıyor: aliasing (bilerek hatalı) |
+| `Kampanya` | Savunmacı kopya (`List.copyOf`) |
+| `Ozyineleme` | Aynı toplam özyinelemeyle ve döngüyle |
+
+---
+
 ## Proje yapısı
 
 ```
@@ -1020,7 +1063,8 @@ src/
 │   ├── gun24/   OtomatikTamamlama, Oneri
 │   ├── gun25/   JsonAyristirici, JsonYazici, JsonDegeri, JsonHatasi
 │   ├── gun26/   Siparis, SiparisDurumu, DurumDegisimi, GecersizGecisHatasi, SiparisPaneli
-│   └── gun27/   BloomFiltresi
+│   ├── gun27/   BloomFiltresi
+│   └── gun28/   Sepet, SepetIslemleri, HataliKampanya, Kampanya, Ozyineleme
 └── test/java/com/semih/gunluk/
     ├── gun01/   BankaHesabiTest
     ├── gun02/   KelimeSayaciTest
@@ -1048,7 +1092,8 @@ src/
     ├── gun24/   OtomatikTamamlamaTest
     ├── gun25/   JsonAyristiriciTest
     ├── gun26/   SiparisDurumuTest, AyarlanabilirSaat
-    └── gun27/   BloomFiltresiTest
+    ├── gun27/   BloomFiltresiTest
+    └── gun28/   BellekTest
 ```
 
 Her yeni gün `gunNN` adında yeni bir paket olarak ekleniyor.

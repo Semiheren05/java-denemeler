@@ -42,6 +42,7 @@ Her gün bir Java alıştırması. Her günün kodu kendi paketinde, birim testl
 | 27 | Bloom filtresi | olasılıklı veri yapısı, `BitSet`, tek hash'ten k hash (Kirsch–Mitzenmacher), 64 bitlik FNV-1a + SplitMix64, boyut ve yanılma oranı formülleri, ölçülen oranı formülle karşılaştırmak | 10 | [`gun27`](src/main/java/com/semih/gunluk/gun27) |
 | 28 | Bellek ve değerle geçirme | stack ve heap, Java'nın her zaman değerle geçirmesi, referansın kopyası, aliasing ve savunmacı kopya, `final`'ın sınırı, String havuzu ve `intern`, `Integer` önbelleği, `StackOverflowError` | 10 | [`gun28`](src/main/java/com/semih/gunluk/gun28) |
 | 29 | Kalıtım mı bileşim mi | `abstract class` ile `interface` farkı, şablon metot, `protected` kanca, `default` metot, kırılgan üst sınıf (`HashSet` sayacı), bileşim ve iletme, Liskov ihlali (`Stack`) | 10 | [`gun29`](src/main/java/com/semih/gunluk/gun29) |
+| 30 | Refactoring katası | kod kokuları, karakterizasyon testi (sabit tohumlu 1.000 rastgele sipariş), ilkel takıntısını `enum` ve `record` ile çözmek, parametre nesnesi, erken dönüş, açık/kapalı ilkesi (kupon arayüzü), `double` yerine `BigDecimal` | 10 | [`gun30`](src/main/java/com/semih/gunluk/gun30) |
 
 ---
 
@@ -1070,6 +1071,64 @@ bilesim.denemeSayisi();   // 3
 
 ---
 
+## Gün 30: SiparisHesaplayici (SOLID ve clean code ile refactoring)
+
+Çalışan ama kötü bir metodu adım adım temizledim. Eski kod `eski` paketinde olduğu gibi duruyor; yeni kod `yeni` paketinde. İkisinin aynı sonucu verdiğini test kanıtlıyor.
+
+```java
+// Önce: dört iş tek metotta, her şey String ve double
+double hesapla(String musteriTipi, List<String[]> urunler, String sehir, String kupon) {
+    double t = 0;
+    for (String[] u : urunler) {
+        if (u[3].equals("ELEKTRONIK")) t += f * a * 1.20; else if ...
+    }
+    if (musteriTipi.equals("ALTIN")) t = t - t * 0.10; ...
+    if (kupon != null) { if (kupon.equals("YENI50")) { if (t >= 500) ...
+    if (t < 750) { if (sehir.equals("Istanbul") || ...
+    return Math.round(t * 100) / 100.0;
+}
+
+// Sonra: adımlar adlarıyla, sonuç bir döküm
+public Fiyatlandirma hesapla(Siparis siparis) {
+    BigDecimal kdvliToplam = kdvliToplam(siparis);
+    BigDecimal musteriIndirimi = kdvliToplam.multiply(siparis.musteriTipi().indirimOrani());
+    BigDecimal indirimli = kdvliToplam.subtract(musteriIndirimi);
+    BigDecimal kuponIndirimi = kuponIndirimi(siparis, indirimli);
+    BigDecimal kuponlu = indirimli.subtract(kuponIndirimi);
+    BigDecimal kargo = KargoUcreti.hesapla(kuponlu, siparis.sehir());
+    return new Fiyatlandirma(...);
+}
+```
+
+| Koku | Çözüm |
+|---|---|
+| Uzun metot | Her adım adlı küçük bir metot; `hesapla` içindekiler sayfası gibi okunuyor |
+| İlkel takıntısı (`String[]`, `"ALTIN"`) | `SiparisKalemi` record'u, `Kategori` ve `MusteriTipi` enum'ları |
+| Sihirli sayılar (`1.20`, `750`, `29.99`) | Oranlar enum'da, kargo sabitleri `KargoUcreti`'nde adlarıyla |
+| İç içe `if` | Erken dönüş, `Set.contains`, `Optional` zinciri |
+| `t`, `u`, `f`, `a` | Ne olduğunu söyleyen adlar |
+| Yeni kupon için metodu açmak | `Kupon` arayüzü; kuponlar kurucudan bir `Map` olarak geliyor |
+| Tek sayı dönüyor | `Fiyatlandirma`: KDV'li toplam, iki indirim, kargo, ödenecek |
+
+**Neler öğrendim:**
+- **Önce karakterizasyon testi:** Refactoring "davranışı değiştirmeden yapıyı değiştirmek". Bunu kanıtlamak için önce eski kodun ne yaptığını kilitleyen bir test yazdım: sabit tohumlu (`new Random(42)`) 1.000 rastgele siparişi iki koda da verip sonuçları karşılaştırıyor. Her adımdan sonra çalıştırdım; kırmızıya dönerse son adım hatalı.
+- **Bilerek kalan tek fark:** Eski kod `double` ile hesaplayıp en sonda yuvarlıyor, yeni kod `BigDecimal` kullanıyor. Kuruşun yarısında biten tutarlarda 1 kuruş fark çıkabiliyor; test bu yüzden 0,01 toleransla karşılaştırıyor. `0.1 + 0.2 != 0.3`: para `double`'da tutulmaz.
+- **İlkel takıntısının bedeli:** Eski koda `"ELEKTRONİK"` (Türkçe İ) gelince eşleşme tutmuyor ve ürün sessizce "diğer" sayılıyor: %20 yerine %10 KDV. Yeni kodda bu yazım derlenmiyor bile; metinden çevrilirken `Kategori.valueOf` hemen hata veriyor.
+- **SOLID'den ikisi:** Tek sorumluluk (kargo kuralı `KargoUcreti`'nde, KDV kalemde, indirim müşteri tipinde) ve açık/kapalı (yüzdelik yeni bir kupon tek satır lambda; hesaplayıcıya dokunmadan ekleniyor, testi var).
+- **Davranışı koru, sonra değiştir:** Bilinmeyen kupon kodunu sessizce yok saymak belki yanlış, ama eski kod öyle yapıyordu. Refactoring sırasında davranışı değiştirmedim; değiştirmek ayrı bir iş ve ayrı bir commit olmalı.
+
+| Dosya | Görevi |
+|---|---|
+| `eski/SiparisHesaplayici` | Başlangıç kodu, bilerek kötü; değiştirilmiyor |
+| `yeni/SiparisHesaplayici` | Aynı kurallar, küçük metotlar, kuponlar dışarıdan |
+| `yeni/Siparis`, `yeni/SiparisKalemi` | Parametre nesnesi ve kalem (`record`) |
+| `yeni/Kategori`, `yeni/MusteriTipi` | KDV ve indirim oranları (`enum`) |
+| `yeni/Kupon` | Kupon arayüzü, `sabitTutar` fabrikası |
+| `yeni/KargoUcreti` | Kargo kuralı ve sabitleri |
+| `yeni/Fiyatlandirma` | Sonucun dökümü (`record`) |
+
+---
+
 ## Proje yapısı
 
 ```
@@ -1103,7 +1162,8 @@ src/
 │   ├── gun26/   Siparis, SiparisDurumu, DurumDegisimi, GecersizGecisHatasi, SiparisPaneli
 │   ├── gun27/   BloomFiltresi
 │   ├── gun28/   Sepet, SepetIslemleri, HataliKampanya, Kampanya, Ozyineleme
-│   └── gun29/   Hesap, VadesizHesap, VadeliHesap, FaizGetiren, HataliSayanKume, SayanKume
+│   ├── gun29/   Hesap, VadesizHesap, VadeliHesap, FaizGetiren, HataliSayanKume, SayanKume
+│   └── gun30/   eski/SiparisHesaplayici, yeni/(SiparisHesaplayici, Siparis, SiparisKalemi, Kategori, MusteriTipi, Kupon, KargoUcreti, Fiyatlandirma)
 └── test/java/com/semih/gunluk/
     ├── gun01/   BankaHesabiTest
     ├── gun02/   KelimeSayaciTest
@@ -1133,7 +1193,8 @@ src/
     ├── gun26/   SiparisDurumuTest, AyarlanabilirSaat
     ├── gun27/   BloomFiltresiTest
     ├── gun28/   BellekTest
-    └── gun29/   KalitimVeBilesimTest
+    ├── gun29/   KalitimVeBilesimTest
+    └── gun30/   RefactoringTest
 ```
 
 Her yeni gün `gunNN` adında yeni bir paket olarak ekleniyor.

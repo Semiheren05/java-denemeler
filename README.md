@@ -41,6 +41,7 @@ Her gün bir Java alıştırması. Her günün kodu kendi paketinde, birim testl
 | 26 | Sipariş durum makinesi | `enum` ile durum makinesi, izinli geçişler, `EnumSet` (`range`, `complementOf`), `EnumMap`, sabite özel gövde, ek kurallı geçiş (14 gün iade), ulaşılabilirlik testi | 10 | [`gun26`](src/main/java/com/semih/gunluk/gun26) |
 | 27 | Bloom filtresi | olasılıklı veri yapısı, `BitSet`, tek hash'ten k hash (Kirsch–Mitzenmacher), 64 bitlik FNV-1a + SplitMix64, boyut ve yanılma oranı formülleri, ölçülen oranı formülle karşılaştırmak | 10 | [`gun27`](src/main/java/com/semih/gunluk/gun27) |
 | 28 | Bellek ve değerle geçirme | stack ve heap, Java'nın her zaman değerle geçirmesi, referansın kopyası, aliasing ve savunmacı kopya, `final`'ın sınırı, String havuzu ve `intern`, `Integer` önbelleği, `StackOverflowError` | 10 | [`gun28`](src/main/java/com/semih/gunluk/gun28) |
+| 29 | Kalıtım mı bileşim mi | `abstract class` ile `interface` farkı, şablon metot, `protected` kanca, `default` metot, kırılgan üst sınıf (`HashSet` sayacı), bileşim ve iletme, Liskov ihlali (`Stack`) | 10 | [`gun29`](src/main/java/com/semih/gunluk/gun29) |
 
 ---
 
@@ -1032,6 +1033,43 @@ hatali.kapsiyorMu("Defter");          // true: kampanya habersizce değişti
 
 ---
 
+## Gün 29: Hesap ve SayanKume (Kalıtım mı bileşim mi)
+
+İki soru: "abstract class ile interface farkı ne?" ve "neden kalıtım yerine bileşim?" İlki için banka hesapları, ikincisi için kaç eleman eklendiğini sayan bir küme.
+
+```java
+Hesap vadeli = new VadeliHesap("TR-2", new BigDecimal("0.48"));
+vadeli.paraYatir(new BigDecimal("1000"));
+vadeli.paraCek(new BigDecimal("300"));   // 303.00 düştü: %1 vade bozma cezası
+
+HataliSayanKume<String> kalitim = new HataliSayanKume<>();   // extends HashSet
+kalitim.addAll(List.of("a", "b", "c"));
+kalitim.denemeSayisi();   // 6: HashSet.addAll içeride bizim add'imizi çağırdı
+
+SayanKume<String> bilesim = new SayanKume<>();               // içinde bir Set tutuyor
+bilesim.hepsiniEkle(List.of("a", "b", "c"));
+bilesim.denemeSayisi();   // 3
+```
+
+**Neler öğrendim:**
+- **Abstract class:** Alanı, constructor'ı ve ortak akışı olan bir iskelet. `Hesap` bakiyeyi ve çekim kurallarını tutuyor; alt sınıf sadece `cekimUcreti`'ni dolduruyor. `paraCek` bir **şablon metot**: `final`, adımların sırası sabit, alt sınıf sırayı bozamıyor.
+- **Interface:** Durumu olmayan bir yetenek ("faiz getirebilir"). `default` metotla ortak hesap verebiliyor ama alan tutamıyor. Bir sınıf tek bir sınıftan türeyip istediği kadar interface uygulayabiliyor: `VadeliHesap extends Hesap implements FaizGetiren`.
+- **`protected`:** Kanca metot alt sınıflara açık, dışarıdaki koda kapalı. Polimorfizm: listede `Hesap` olarak duran iki hesap kendi ücretini uyguluyor.
+- **Kırılgan üst sınıf:** `HashSet`'ten türeyen sayaç, `addAll` içeride `add`'i çağırdığı için 3 eleman için 6 sayıyor. Alt sınıf, üst sınıfın dokümante edilmemiş iç ayrıntısına bağımlı oldu; JDK değişirse davranış da değişebilir.
+- **Bileşim:** `SayanKume` bir kümeyi içinde tutup işi ona iletiyor. İçteki küme ne yaparsa yapsın sayaç doğru; üstelik `HashSet` yerine `TreeSet` verilebiliyor. Kural: "X bir Y'dir" gerçekten doğruysa kalıtım, "X bir Y kullanır" ise bileşim.
+- **Liskov ihlali:** JDK'nın kendi hatası: `Stack extends Vector`, o yüzden `stack.add(0, ...)` yığının dibine eleman sokabiliyor. Yığın gerekiyorsa `ArrayDeque`.
+
+| Dosya | Görevi |
+|---|---|
+| `Hesap` | Ortak bakiye, şablon metot `paraCek`, `protected abstract` kanca |
+| `VadesizHesap` | Ücretsiz çekim |
+| `VadeliHesap` | %1 ceza, `FaizGetiren` uyguluyor |
+| `FaizGetiren` | `default` metotla aylık faiz |
+| `HataliSayanKume` | `HashSet`'ten türeyen sayaç: kırılgan üst sınıf (bilerek hatalı) |
+| `SayanKume` | Bileşimle sayaç, iç küme değiştirilebilir |
+
+---
+
 ## Proje yapısı
 
 ```
@@ -1064,7 +1102,8 @@ src/
 │   ├── gun25/   JsonAyristirici, JsonYazici, JsonDegeri, JsonHatasi
 │   ├── gun26/   Siparis, SiparisDurumu, DurumDegisimi, GecersizGecisHatasi, SiparisPaneli
 │   ├── gun27/   BloomFiltresi
-│   └── gun28/   Sepet, SepetIslemleri, HataliKampanya, Kampanya, Ozyineleme
+│   ├── gun28/   Sepet, SepetIslemleri, HataliKampanya, Kampanya, Ozyineleme
+│   └── gun29/   Hesap, VadesizHesap, VadeliHesap, FaizGetiren, HataliSayanKume, SayanKume
 └── test/java/com/semih/gunluk/
     ├── gun01/   BankaHesabiTest
     ├── gun02/   KelimeSayaciTest
@@ -1093,7 +1132,8 @@ src/
     ├── gun25/   JsonAyristiriciTest
     ├── gun26/   SiparisDurumuTest, AyarlanabilirSaat
     ├── gun27/   BloomFiltresiTest
-    └── gun28/   BellekTest
+    ├── gun28/   BellekTest
+    └── gun29/   KalitimVeBilesimTest
 ```
 
 Her yeni gün `gunNN` adında yeni bir paket olarak ekleniyor.

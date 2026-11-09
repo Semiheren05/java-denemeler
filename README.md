@@ -43,6 +43,7 @@ Her gün bir Java alıştırması. Her günün kodu kendi paketinde, birim testl
 | 28 | Bellek ve değerle geçirme | stack ve heap, Java'nın her zaman değerle geçirmesi, referansın kopyası, aliasing ve savunmacı kopya, `final`'ın sınırı, String havuzu ve `intern`, `Integer` önbelleği, `StackOverflowError` | 10 | [`gun28`](src/main/java/com/semih/gunluk/gun28) |
 | 29 | Kalıtım mı bileşim mi | `abstract class` ile `interface` farkı, şablon metot, `protected` kanca, `default` metot, kırılgan üst sınıf (`HashSet` sayacı), bileşim ve iletme, Liskov ihlali (`Stack`) | 10 | [`gun29`](src/main/java/com/semih/gunluk/gun29) |
 | 30 | Refactoring katası | kod kokuları, karakterizasyon testi (sabit tohumlu 1.000 rastgele sipariş), ilkel takıntısını `enum` ve `record` ile çözmek, parametre nesnesi, erken dönüş, açık/kapalı ilkesi (kupon arayüzü), `double` yerine `BigDecimal` | 10 | [`gun30`](src/main/java/com/semih/gunluk/gun30) |
+| 31 | Singleton ve doğru yazımları | `enum` singleton (yansıma ve serileştirmeye dayanıklı), holder deyimiyle tembel kurulum, `CyclicBarrier` ile yarışı göstermek, çift kontrollü kilit ve `volatile`, küresel durum sorunu, bağımlılık enjeksiyonu | 10 | [`gun31`](src/main/java/com/semih/gunluk/gun31) |
 
 ---
 
@@ -1129,6 +1130,51 @@ public Fiyatlandirma hesapla(Siparis siparis) {
 
 ---
 
+## Gün 31: Ayarlar ve TembelTekil (Singleton ve doğru yazımları)
+
+"Bir sınıftan tek bir örnek olsun." Basit görünüyor ama dört şekilde bozuluyor: aynı anda gelen thread'ler, yansıma (reflection), serileştirme ve testler arasında taşınan durum. Her yazımı aynı saldırıyla denedim: 8 thread bir `CyclicBarrier`'da bekleyip aynı anda örnek istiyor.
+
+```java
+// 1) Önerilen: tek elemanlı enum
+public enum Ayarlar { INSTANCE; ... }
+
+// 2) Tembel kurulum gerekiyorsa: holder deyimi
+public static TembelTekil ornek() { return Tutucu.ORNEK; }
+private static final class Tutucu { private static final TembelTekil ORNEK = new TembelTekil(); }
+
+// 3) Bilerek hatalı: kontrol ile atama arasında başka thread araya giriyor
+if (ornek == null) { ornek = new HataliTekil(); }   // 8 thread → birden fazla örnek
+
+// 4) Çift kontrollü kilit: volatile şart
+private static volatile CiftKontrolluTekil ornek;
+```
+
+| Yazım | 8 thread aynı anda | Yansıma | Serileştirme |
+|---|---|---|---|
+| `enum` | tek örnek | engelli (`IllegalArgumentException`) | aynı nesne döner |
+| Holder deyimi | tek örnek | `setAccessible` ile ikinci örnek kurulabiliyor | ek kod gerekir (`readResolve`) |
+| Kontrolsüz `if` | **birden fazla örnek** | kırılır | kırılır |
+| Çift kontrollü kilit | tek örnek | kırılır | ek kod gerekir |
+
+**Neler öğrendim:**
+- **`enum` neden en iyisi:** JVM sabiti sınıf yüklenirken bir kez ve thread-safe kuruyor. `Constructor.newInstance` enum için açıkça reddediliyor, serileştirme de sabiti adıyla geri buluyor. Sıfır ek kod.
+- **Holder deyimi:** İç sınıf ancak `ornek()` ilk çağrıldığında yükleniyor; sınıf yükleme zaten thread-safe olduğu için kilit gerekmiyor. Dış sınıfın başka bir üyesini (`surum()`) kullanmak örneği kurmuyor; testte kurulum sayacıyla kontrol ediyorum.
+- **Yarışı görünür kılmak:** Hatalı sürümün kurucusu 50 ms uyuyor (bağlantı açmak gibi). Bariyer 8 thread'i aynı anda bıraktığı için hepsi `null` görüyor; tek çekirdekte bile (`taskset -c 0`) birden fazla örnek çıktı.
+- **Neden `volatile`:** Onsuz JVM, nesne tamamen kurulmadan referansı alana yazabiliyor; ikinci thread kilide girmeden yarı kurulmuş nesneyi alabiliyor. Holder deyimi aynı işi daha sade yaptığı için genelde o tercih ediliyor.
+- **Asıl sorun küresel durum:** `GlobalSayac` testler arasında sayıyı taşıyor; bir test "SP-1" bekleyemiyor, sonuç önceki testlere bağlı. `SiparisNumaralari` bağımlılığını kurucudan alınca testte `() -> 7` gibi sahte bir üretici verilebiliyor. Spring'deki `@Component` bean'leri zaten varsayılan olarak tek örnek; "tek olsun" kararını sınıfın kendisi değil konteyner veriyor.
+
+| Dosya | Görevi |
+|---|---|
+| `Ayarlar` | `enum` singleton |
+| `TembelTekil` | Holder deyimiyle tembel singleton |
+| `HataliTekil` | Kontrolsüz `if`: yarış (bilerek hatalı) |
+| `CiftKontrolluTekil` | Çift kontrollü kilit, `volatile` |
+| `GlobalSayac` | Küresel durumun sorununu gösteren sayaç |
+| `NumaraUretici`, `SiraliNumaraUretici` | Enjekte edilebilir bağımlılık ve gerçek uygulaması |
+| `SiparisNumaralari` | Küresel sürüm ile kurucudan bağımlılık alan sürüm yan yana |
+
+---
+
 ## Proje yapısı
 
 ```
@@ -1163,7 +1209,8 @@ src/
 │   ├── gun27/   BloomFiltresi
 │   ├── gun28/   Sepet, SepetIslemleri, HataliKampanya, Kampanya, Ozyineleme
 │   ├── gun29/   Hesap, VadesizHesap, VadeliHesap, FaizGetiren, HataliSayanKume, SayanKume
-│   └── gun30/   eski/SiparisHesaplayici, yeni/(SiparisHesaplayici, Siparis, SiparisKalemi, Kategori, MusteriTipi, Kupon, KargoUcreti, Fiyatlandirma)
+│   ├── gun30/   eski/SiparisHesaplayici, yeni/(SiparisHesaplayici, Siparis, SiparisKalemi, Kategori, MusteriTipi, Kupon, KargoUcreti, Fiyatlandirma)
+│   └── gun31/   Ayarlar, TembelTekil, HataliTekil, CiftKontrolluTekil, GlobalSayac, NumaraUretici, SiraliNumaraUretici, SiparisNumaralari
 └── test/java/com/semih/gunluk/
     ├── gun01/   BankaHesabiTest
     ├── gun02/   KelimeSayaciTest
@@ -1194,7 +1241,8 @@ src/
     ├── gun27/   BloomFiltresiTest
     ├── gun28/   BellekTest
     ├── gun29/   KalitimVeBilesimTest
-    └── gun30/   RefactoringTest
+    ├── gun30/   RefactoringTest
+    └── gun31/   TekilTest
 ```
 
 Her yeni gün `gunNN` adında yeni bir paket olarak ekleniyor.

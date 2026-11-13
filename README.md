@@ -49,6 +49,7 @@ Her gün bir Java alıştırması. Her günün kodu kendi paketinde, birim testl
 | 34 | Banka transferi | `ReentrantLock`, deadlock'u testle göstermek (`ThreadMXBean.findDeadlockedThreads`), kilit sırasıyla önlemek, `tryLock` ile süreli deneme, `lockInterruptibly`, `Condition` ile bekleme, eşzamanlı yükte toplam paranın korunması | 10 | [`gun34`](src/main/java/com/semih/gunluk/gun34) |
 | 35 | Kütüphane yönetimi (mini proje) | OOP, `Collection`, Stream (`groupingBy`, sıralama), `Optional`, `java.time` ve `Clock`, gecikme cezası (`BigDecimal`), dosyaya kaydetme ve yükleme, test edilebilir konsol komutları | 10 | [`gun35`](src/main/java/com/semih/gunluk/gun35) |
 | 36 | Log analizcisi | `Files.lines` ile tembel okuma, regex adlı grupları, bozuk satırları saymak, yolu normalleştirmek (`/posts/12` → `/posts/{id}`), saatlik hata sayısı (`TreeMap`), p95 süre, `findFirst` ile erken durmak | 10 | [`gun36`](src/main/java/com/semih/gunluk/gun36) |
+| 37 | Hız sınırlayıcı | sabit pencere ve sınırdaki açığı, kayan pencere, jeton kovası ve tembel dolum, `Retry-After` süresi, `ConcurrentHashMap.compute` ile atomik güncelleme, `Clock` ile test | 10 | [`gun37`](src/main/java/com/semih/gunluk/gun37) |
 
 ---
 
@@ -1384,6 +1385,39 @@ r.durumSiniflari();   // {2xx=3, 4xx=1, 5xx=3}
 
 ---
 
+## Gün 37: JetonKovasi (Hız sınırlama algoritmaları)
+
+"Bir IP dakikada en fazla 5 istek atabilsin." Üç yolla yazdım ve aynı senaryoda karşılaştırdım.
+
+| Algoritma | Nasıl | Bellek (anahtar başına) | Zayıf yanı |
+|---|---|---|---|
+| Sabit pencere | Her dakikaya bir sayaç | 2 sayı | Dakika sınırında limitin 2 katı geçebiliyor |
+| Kayan pencere | Son 60 saniyedeki istek zamanları | limit kadar zaman damgası | Bellek |
+| Jeton kovası | Kova dolduruluyor, her istek bir jeton | 2 sayı | Kısa patlamaya (kapasite kadar) izin veriyor; çoğu zaman istenen de bu |
+
+```java
+JetonKovasi kova = new JetonKovasi(Clock.systemUTC(), 10, 2.0);   // en fazla 10 jeton, saniyede 2 dolum
+
+if (!kova.izinVer(istemciIp)) {
+    long bekle = kova.beklemeMs(istemciIp);   // 429 yanıtında Retry-After
+}
+```
+
+**Neler öğrendim:**
+- **Sabit pencerenin açığı:** 10:00:59.9'da 5 istek, 10:01:00.1'de 5 istek daha: ikisi farklı dakikaya düştüğü için 200 ms'de 10 istek geçiyor. Aynı senaryoda kayan pencere ikinci beşi reddediyor; testte ikisini yan yana koydum.
+- **Tembel dolum:** Jeton kovası için zamanlayıcı yok. İstek geldiğinde son istekten bu yana geçen süre × dolum hızı kadar jeton ekleniyor. Binlerce IP için binlerce zamanlayıcı gerekmiyor. Jeton sayısı `double`: 250 ms'de yarım jeton birikiyor, yetmiyor; 500 ms'de bir jeton.
+- **Atomik güncelleme:** "Oku, karar ver, yaz" adımları arasına başka bir thread girerse limit aşılır (Gün 13'teki yarış). `ConcurrentHashMap.compute` anahtar başına atomik; 16 thread 2.000 istek atınca tam 100 izin çıkıyor. Kayan pencerede kuyruk değiştirilebilir bir nesne olduğu için anahtar başına `synchronized`.
+- **Zamana bağlı kod ve test:** Hepsi `Clock` alıyor; testte saati milisaniye milisaniye ilerletiyorum. `Thread.sleep` ile yazılmış bir test hem yavaş hem güvenilmez olurdu.
+
+| Dosya | Görevi |
+|---|---|
+| `HizSinirlayici` | Ortak arayüz |
+| `SabitPencere` | Dakika başına sayaç |
+| `KayanPencere` | Son pencerenin zaman damgaları |
+| `JetonKovasi` | Tembel dolumlu kova, bekleme süresi |
+
+---
+
 ## Proje yapısı
 
 ```
@@ -1424,7 +1458,8 @@ src/
 │   ├── gun33/   Basvuru, Kural, Karar, KuralMotoru, KrediKurallari
 │   ├── gun34/   Hesap, TransferServisi, HataliTransferServisi, YetersizBakiye
 │   ├── gun35/   Kitap, Odunc, Kutuphane, KutuphaneDosyasi, KomutYorumlayici, KutuphaneHatasi
-│   └── gun36/   LogKaydi, LogAyristirici, LogAnalizi, Rapor, LogOkumaHatasi
+│   ├── gun36/   LogKaydi, LogAyristirici, LogAnalizi, Rapor, LogOkumaHatasi
+│   └── gun37/   HizSinirlayici, SabitPencere, KayanPencere, JetonKovasi
 └── test/java/com/semih/gunluk/
     ├── gun01/   BankaHesabiTest
     ├── gun02/   KelimeSayaciTest
@@ -1461,7 +1496,8 @@ src/
     ├── gun33/   KuralMotoruTest
     ├── gun34/   TransferTest
     ├── gun35/   KutuphaneTest, AyarlanabilirSaat
-    └── gun36/   LogAnaliziTest
+    ├── gun36/   LogAnaliziTest
+    └── gun37/   HizSinirlayiciTest, AyarlanabilirSaat
 ```
 
 Her yeni gün `gunNN` adında yeni bir paket olarak ekleniyor.

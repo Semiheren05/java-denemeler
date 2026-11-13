@@ -45,6 +45,7 @@ Her gün bir Java alıştırması. Her günün kodu kendi paketinde, birim testl
 | 30 | Refactoring katası | kod kokuları, karakterizasyon testi (sabit tohumlu 1.000 rastgele sipariş), ilkel takıntısını `enum` ve `record` ile çözmek, parametre nesnesi, erken dönüş, açık/kapalı ilkesi (kupon arayüzü), `double` yerine `BigDecimal` | 10 | [`gun30`](src/main/java/com/semih/gunluk/gun30) |
 | 31 | Singleton ve doğru yazımları | `enum` singleton (yansıma ve serileştirmeye dayanıklı), holder deyimiyle tembel kurulum, `CyclicBarrier` ile yarışı göstermek, çift kontrollü kilit ve `volatile`, küresel durum sorunu, bağımlılık enjeksiyonu | 10 | [`gun31`](src/main/java/com/semih/gunluk/gun31) |
 | 32 | Optional'ın doğru kullanımı | iç içe `null` kontrolü yerine `map`/`flatMap`/`filter` zinciri, `orElse` ile `orElseGet` farkı (sayaçla), `orElseThrow`, `or`, `Optional::stream`, `OptionalInt`, alan ve parametrede neden kullanılmaz | 10 | [`gun32`](src/main/java/com/semih/gunluk/gun32) |
+| 33 | Kural motoru | hazır fonksiyonel arayüzler: `Predicate` (`and`, `or`, `negate`, `not`, kısa devre), `Function` (`andThen`, `compose`), `UnaryOperator` zinciri, `BiFunction`, `Consumer.andThen`; kuralları veri olarak tutmak | 10 | [`gun33`](src/main/java/com/semih/gunluk/gun33) |
 
 ---
 
@@ -1217,6 +1218,47 @@ return depo.bul(id)
 
 ---
 
+## Gün 33: KuralMotoru (Hazır fonksiyonel arayüzler)
+
+Kredi başvurusu değerlendirmesi. Kurallar `if` zinciri değil, bir listede duran veriler: adı, koşulu (`Predicate`) ve red sebebi. Motor kuralların ne olduğunu bilmiyor, sırayla deniyor ve bütün sebepleri birden döndürüyor.
+
+```java
+Predicate<Basvuru> guvenilir = IYI_KREDI_NOTU.or(YUKSEK_GELIR.and(DENEYIMLI));
+
+KuralMotoru motor = new KuralMotoru()
+        .ekle(new Kural("yas", b -> b.yas() >= 18, "18 yaşından küçükler başvuramaz"))
+        .ekle(new Kural("guven", guvenilir, "Kredi notu düşük ve gelir/deneyim yetersiz"))
+        .dinle(karar -> denetimKaydi.add(karar));
+
+motor.degerlendir(basvuru);
+// Karar[basvuran=Ayşe, onay=false, sebepler=[18 yaşından küçükler..., Kredi notu düşük...]]
+```
+
+| Arayüz | Ne alır, ne döner | Bu günde |
+|---|---|---|
+| `Predicate<T>` | `T` → `boolean` | Kurallar; `and`, `or`, `negate`, `Predicate.not` |
+| `Function<T, R>` | `T` → `R` | Başvurudan ham puan; `andThen`, `compose` |
+| `UnaryOperator<T>` | `T` → `T` | Puana sırayla uygulanan düzeltmeler |
+| `BiFunction<T, U, R>` | `T`, `U` → `R` | Puan ve vadeden faiz oranı |
+| `Consumer<T>` | `T` → (yok) | Karar dinleyicileri; `andThen` ile birden fazla |
+
+**Neler öğrendim:**
+- **Kural bir veri:** Yeni kural motoru değiştirmeden `ekle` ile, kaldırmak `cikar("ad")` ile. Kurallar `LinkedHashMap`'te olduğu için sebepler hep aynı sırada çıkıyor.
+- **İlk hatada durmamak:** Kullanıcıya "önce adını yaz", düzeltince "yaşın tutmuyor" demek yerine bütün sebepler tek seferde.
+- **`and` kısa devre yapıyor:** `RESIT.and(krediBurosundaTemiz)`: ilk koşul tutmazsa ikinci (dış servise giden) hiç çalışmıyor. Ucuz kontrol önce yazılıyor; testte sayaçla kanıtladım.
+- **`andThen` ile `compose` sırası:** `f.andThen(g)` önce `f`, `f.compose(g)` önce `g`. `×2` ve `+10` ile 10'dan 30 ve 40 çıkıyor.
+- **Düzeltmeleri zincirlemek:** Bir `UnaryOperator` listesi `reduce` ile tek fonksiyona katlanıyor; boş listede `UnaryOperator.identity()` sayıyı olduğu gibi bırakıyor.
+
+| Dosya | Görevi |
+|---|---|
+| `Basvuru` | Başvuru verisi (`record`) |
+| `Kural` | Ad, koşul, red sebebi (`record`) |
+| `Karar` | Onay ve sebepler (`record`) |
+| `KuralMotoru` | Kural ekleme/çıkarma, değerlendirme, `Consumer` dinleyiciler |
+| `KrediKurallari` | Hazır koşullar, standart kural seti, puan fonksiyonları, faiz tablosu |
+
+---
+
 ## Proje yapısı
 
 ```
@@ -1253,7 +1295,8 @@ src/
 │   ├── gun29/   Hesap, VadesizHesap, VadeliHesap, FaizGetiren, HataliSayanKume, SayanKume
 │   ├── gun30/   eski/SiparisHesaplayici, yeni/(SiparisHesaplayici, Siparis, SiparisKalemi, Kategori, MusteriTipi, Kupon, KargoUcreti, Fiyatlandirma)
 │   ├── gun31/   Ayarlar, TembelTekil, HataliTekil, CiftKontrolluTekil, GlobalSayac, NumaraUretici, SiraliNumaraUretici, SiparisNumaralari
-│   └── gun32/   Musteri, Adres, MusteriDeposu, KargoAdresi, MusteriBulunamadi
+│   ├── gun32/   Musteri, Adres, MusteriDeposu, KargoAdresi, MusteriBulunamadi
+│   └── gun33/   Basvuru, Kural, Karar, KuralMotoru, KrediKurallari
 └── test/java/com/semih/gunluk/
     ├── gun01/   BankaHesabiTest
     ├── gun02/   KelimeSayaciTest
@@ -1286,7 +1329,8 @@ src/
     ├── gun29/   KalitimVeBilesimTest
     ├── gun30/   RefactoringTest
     ├── gun31/   TekilTest
-    └── gun32/   OptionalTest
+    ├── gun32/   OptionalTest
+    └── gun33/   KuralMotoruTest
 ```
 
 Her yeni gün `gunNN` adında yeni bir paket olarak ekleniyor.

@@ -52,6 +52,7 @@ Her gün bir Java alıştırması. Her günün kodu kendi paketinde, birim testl
 | 37 | Hız sınırlayıcı | sabit pencere ve sınırdaki açığı, kayan pencere, jeton kovası ve tembel dolum, `Retry-After` süresi, `ConcurrentHashMap.compute` ile atomik güncelleme, `Clock` ile test | 10 | [`gun37`](src/main/java/com/semih/gunluk/gun37) |
 | 38 | Seyahat arama (CompletableFuture) | `thenCombine` ile paralel, `thenCompose` ile bağımlı çağrı, `allOf` ve `handle` ile kısmi sonuç, `anyOf`, `orTimeout` ve `completeOnTimeout`, `exceptionally`, `join`/`get` farkı, `thenApplyAsync` ve özel havuz | 10 | [`gun38`](src/main/java/com/semih/gunluk/gun38) |
 | 39 | Para ve kuruş dağıtımı | değer nesnesi olarak para, `Currency` ve kuruş hanesi, `BigDecimal` `equals` tuzağı, eşit ve oranlı paylaştırma (en büyük kalan), `HALF_EVEN` ile `HALF_UP` farkı, KDV ayırma, Türkçe para biçimi | 10 | [`gun39`](src/main/java/com/semih/gunluk/gun39) |
+| 40 | İş günleri ve saat dilimleri | iş günü ekleme ve sayma, `TemporalAdjuster` (sonraki iş günü, ayın son iş günü), sipariş kesim saati, `ZonedDateTime` ve `Instant`, yaz saati boşluğu ve çakışması, `Period` ile `Duration` farkı | 10 | [`gun40`](src/main/java/com/semih/gunluk/gun40) |
 
 ---
 
@@ -1490,6 +1491,36 @@ Para.tl("12.345");                                // IllegalArgumentException: e
 
 ---
 
+## Gün 40: IsGunuTakvimi ve ToplantiPlanlayici (İş günleri ve saat dilimleri)
+
+Gün 9'da `LocalDateTime` vardı; bu gün iki zor yer: tatilleri bilen iş günü hesabı ve farklı şehirler arası saat.
+
+```java
+IsGunuTakvimi takvim = new IsGunuTakvimi(tatiller);   // tatiller dışarıdan: dini bayramlar her yıl değişiyor
+takvim.isGunuEkle(LocalDate.of(2026, 10, 28), 1);     // 2026-11-02 (29 Ekim tatil, 30 köprü, hafta sonu)
+LocalDate.of(2026, 10, 1).with(takvim.ayinSonIsGunu());   // maaş günü
+takvim.tahminiTeslim(LocalDateTime.parse("2026-11-13T15:00"), 2);   // kesimden sonra: pazartesi işlenir, çarşamba teslim
+
+Instant an = ToplantiPlanlayici.an(LocalDateTime.of(2026, 11, 13, 14, 0), ISTANBUL);
+ToplantiPlanlayici.herkesIcin(an, List.of(ISTANBUL, NEW_YORK, LONDRA));
+// {America/New_York=06:00, Europe/Istanbul=14:00, Europe/London=11:00}
+```
+
+**Neler öğrendim:**
+- **`TemporalAdjuster`:** "Sonraki iş günü" ve "ayın son iş günü" kendi ayarlayıcılarım; `tarih.with(...)` ile kullanılıyor, JDK'nın `TemporalAdjusters.lastDayOfMonth()` ve `firstInMonth(MONDAY)` ayarlayıcıları gibi.
+- **An ile yerel saat farkı:** "14:00" tek başına bir an değil, "14:00 İstanbul" bir an. Kural: `Instant` (UTC) saklanır, yerel saat sadece gösterirken hesaplanır. Aynı anın İstanbul ve Londra hâlleri `equals` ile eşit değil (bölge farklı), `isEqual` ile eşit.
+- **Yaz saati her şeyi değiştiriyor:** Türkiye yaz saati uygulamıyor (hep +03:00) ama New York 1 Kasım 2026'da geri aldı. İstanbul 14:00 Ekim'de New York'ta 07:00, Kasım'da 06:00; aradaki fark 7 saatten 8 saate çıktı.
+- **Boşluk ve çakışma:** 8 Mart 2026'da New York'ta saat 02:00'den 03:00'e atlıyor; 02:30 diye bir an yok, `atZone` onu 03:30'a kaydırıyor. 1 Kasım'da 01:30 iki kez yaşanıyor; `withEarlierOffsetAtOverlap` ve `withLaterOffsetAtOverlap` arasında tam 1 saat var.
+- **`Period` ile `Duration`:** Yaz saatine geçilen gün `plus(Period.ofDays(1))` "yarın aynı saat" (aslında 23 saat sonra), `plus(Duration.ofHours(24))` tam 24 saat sonra (saat 13:00). Hatırlatıcı "yarın 12'de" ise `Period`, oturum süresi ise `Duration`.
+- **Ay sonu:** 31 Ocak + 1 ay = 28 Şubat (artık yılda 29); `plusMonths` olmayan günü ayın son gününe çekiyor.
+
+| Dosya | Görevi |
+|---|---|
+| `IsGunuTakvimi` | İş günü kontrolü, ekleme, sayma, ayarlayıcılar, kesim saatli teslim tahmini |
+| `ToplantiPlanlayici` | Yerel saatten an, anın her bölgedeki karşılığı, boşluktaki saati yerleştirme |
+
+---
+
 ## Proje yapısı
 
 ```
@@ -1533,7 +1564,8 @@ src/
 │   ├── gun36/   LogKaydi, LogAyristirici, LogAnalizi, Rapor, LogOkumaHatasi
 │   ├── gun37/   HizSinirlayici, SabitPencere, KayanPencere, JetonKovasi
 │   ├── gun38/   SeyahatPlanlayici, UcusServisi, OtelServisi, KurServisi, Ucus, Otel, Paket, SeyahatBulunamadi
-│   └── gun39/   Para, FarkliParaBirimi
+│   ├── gun39/   Para, FarkliParaBirimi
+│   └── gun40/   IsGunuTakvimi, ToplantiPlanlayici
 └── test/java/com/semih/gunluk/
     ├── gun01/   BankaHesabiTest
     ├── gun02/   KelimeSayaciTest
@@ -1573,7 +1605,8 @@ src/
     ├── gun36/   LogAnaliziTest
     ├── gun37/   HizSinirlayiciTest, AyarlanabilirSaat
     ├── gun38/   SeyahatPlanlayiciTest
-    └── gun39/   ParaTest
+    ├── gun39/   ParaTest
+    └── gun40/   TarihVeSaatDilimiTest
 ```
 
 Her yeni gün `gunNN` adında yeni bir paket olarak ekleniyor.

@@ -46,6 +46,7 @@ Her gün bir Java alıştırması. Her günün kodu kendi paketinde, birim testl
 | 31 | Singleton ve doğru yazımları | `enum` singleton (yansıma ve serileştirmeye dayanıklı), holder deyimiyle tembel kurulum, `CyclicBarrier` ile yarışı göstermek, çift kontrollü kilit ve `volatile`, küresel durum sorunu, bağımlılık enjeksiyonu | 10 | [`gun31`](src/main/java/com/semih/gunluk/gun31) |
 | 32 | Optional'ın doğru kullanımı | iç içe `null` kontrolü yerine `map`/`flatMap`/`filter` zinciri, `orElse` ile `orElseGet` farkı (sayaçla), `orElseThrow`, `or`, `Optional::stream`, `OptionalInt`, alan ve parametrede neden kullanılmaz | 10 | [`gun32`](src/main/java/com/semih/gunluk/gun32) |
 | 33 | Kural motoru | hazır fonksiyonel arayüzler: `Predicate` (`and`, `or`, `negate`, `not`, kısa devre), `Function` (`andThen`, `compose`), `UnaryOperator` zinciri, `BiFunction`, `Consumer.andThen`; kuralları veri olarak tutmak | 10 | [`gun33`](src/main/java/com/semih/gunluk/gun33) |
+| 34 | Banka transferi | `ReentrantLock`, deadlock'u testle göstermek (`ThreadMXBean.findDeadlockedThreads`), kilit sırasıyla önlemek, `tryLock` ile süreli deneme, `lockInterruptibly`, `Condition` ile bekleme, eşzamanlı yükte toplam paranın korunması | 10 | [`gun34`](src/main/java/com/semih/gunluk/gun34) |
 
 ---
 
@@ -1259,6 +1260,53 @@ motor.degerlendir(basvuru);
 
 ---
 
+## Gün 34: TransferServisi (ReentrantLock ve deadlock)
+
+İki hesap arası transfer iki kilit istiyor. A→B ve B→A aynı anda gelirse, kilitleri parametre sırasıyla alan kod kilitlenip kalıyor (deadlock). Bunu önce bilerek yaşattım, sonra iki yolla önledim.
+
+```text
+Thread 1: A→B   A'yı aldı ──────► B'yi bekliyor ─┐
+Thread 2: B→A   B'yi aldı ──────► A'yı bekliyor ─┘  ikisi de sonsuza kadar
+```
+
+```java
+// Çözüm 1: kilitleri her zaman aynı sırayla al (küçük id önce)
+Hesap ilk = kaynak.id() < hedef.id() ? kaynak : hedef;
+Hesap ikinci = ilk == kaynak ? hedef : kaynak;
+ilk.kilit().lock();
+try {
+    ikinci.kilit().lock();
+    try {
+        kaynak.dus(tutar);
+        hedef.ekle(tutar);
+    } finally {
+        ikinci.kilit().unlock();
+    }
+} finally {
+    ilk.kilit().unlock();
+}
+
+// Çözüm 2: süreli dene, alamazsan vazgeç ve sonra tekrar dene
+if (!kaynak.kilit().tryLock(200, TimeUnit.MILLISECONDS)) return false;
+```
+
+**Neler öğrendim:**
+- **Deadlock'u test etmek:** Hatalı serviste iki thread ilk kilidi aldıktan sonra bir `CyclicBarrier`'da buluşuyor, sonra ikinci kilide uzanıyor; deadlock garanti. `ThreadMXBean.findDeadlockedThreads()` kilitlenen iki thread'i buluyor (`synchronized` yanında `ReentrantLock`'u da görüyor). Kilitler `lockInterruptibly` ile alındığı için test sonunda thread'ler `interrupt` ile kurtarılıyor; test asılı kalmıyor.
+- **Kilit sırası:** Bütün transferler kilitleri aynı sırayla alırsa döngüsel bekleme oluşamıyor. 8 thread ile 10.000 karşılıklı transfer bitiyor; 10 hesap arasında 16.000 rastgele transfer denemesinden sonra toplam para kuruşu kuruşuna aynı ve hiçbir hesap eksiye düşmüyor.
+- **`tryLock`:** Kilit başkasındayken 200 ms bekleyip `false` dönüyor. Ters sırayla kilit isteyen iki thread bile vazgeç-tekrar dene döngüsüyle sonunda bitiriyor.
+- **Hep `finally`:** `unlock` `finally`'de; yetersiz bakiye istisnasından sonra iki kilidin de boş olduğunu test ediyorum. Önce düşülüyor, sonra ekleniyor: düşme başarısız olursa hiçbir şey değişmemiş oluyor.
+- **`ReentrantLock` neden "reentrant":** Kilidi tutan thread aynı kilidi tekrar alabiliyor (`getHoldCount` 2); `bakiye()` de kilit aldığı için bu şart.
+- **`Condition`:** `bekleVeCek` bakiye yetene kadar kilidi bırakıp uyuyor, para yatınca `signalAll` ile uyanıp tekrar bakıyor. Uyanmak koşulun sağlandığı anlamına gelmediği için kontrol `if` değil `while`.
+
+| Dosya | Görevi |
+|---|---|
+| `Hesap` | Kuruş cinsinden bakiye, `ReentrantLock`, `Condition` ile bekleyen çekim |
+| `TransferServisi` | Sıralı kilitle transfer, `tryLock` ile süreli deneme |
+| `HataliTransferServisi` | Parametre sırasıyla kilit: deadlock (bilerek hatalı) |
+| `YetersizBakiye` | Bakiye yetmediğinde hata |
+
+---
+
 ## Proje yapısı
 
 ```
@@ -1296,7 +1344,8 @@ src/
 │   ├── gun30/   eski/SiparisHesaplayici, yeni/(SiparisHesaplayici, Siparis, SiparisKalemi, Kategori, MusteriTipi, Kupon, KargoUcreti, Fiyatlandirma)
 │   ├── gun31/   Ayarlar, TembelTekil, HataliTekil, CiftKontrolluTekil, GlobalSayac, NumaraUretici, SiraliNumaraUretici, SiparisNumaralari
 │   ├── gun32/   Musteri, Adres, MusteriDeposu, KargoAdresi, MusteriBulunamadi
-│   └── gun33/   Basvuru, Kural, Karar, KuralMotoru, KrediKurallari
+│   ├── gun33/   Basvuru, Kural, Karar, KuralMotoru, KrediKurallari
+│   └── gun34/   Hesap, TransferServisi, HataliTransferServisi, YetersizBakiye
 └── test/java/com/semih/gunluk/
     ├── gun01/   BankaHesabiTest
     ├── gun02/   KelimeSayaciTest
@@ -1330,7 +1379,8 @@ src/
     ├── gun30/   RefactoringTest
     ├── gun31/   TekilTest
     ├── gun32/   OptionalTest
-    └── gun33/   KuralMotoruTest
+    ├── gun33/   KuralMotoruTest
+    └── gun34/   TransferTest
 ```
 
 Her yeni gün `gunNN` adında yeni bir paket olarak ekleniyor.

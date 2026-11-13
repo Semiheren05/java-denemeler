@@ -51,6 +51,7 @@ Her gün bir Java alıştırması. Her günün kodu kendi paketinde, birim testl
 | 36 | Log analizcisi | `Files.lines` ile tembel okuma, regex adlı grupları, bozuk satırları saymak, yolu normalleştirmek (`/posts/12` → `/posts/{id}`), saatlik hata sayısı (`TreeMap`), p95 süre, `findFirst` ile erken durmak | 10 | [`gun36`](src/main/java/com/semih/gunluk/gun36) |
 | 37 | Hız sınırlayıcı | sabit pencere ve sınırdaki açığı, kayan pencere, jeton kovası ve tembel dolum, `Retry-After` süresi, `ConcurrentHashMap.compute` ile atomik güncelleme, `Clock` ile test | 10 | [`gun37`](src/main/java/com/semih/gunluk/gun37) |
 | 38 | Seyahat arama (CompletableFuture) | `thenCombine` ile paralel, `thenCompose` ile bağımlı çağrı, `allOf` ve `handle` ile kısmi sonuç, `anyOf`, `orTimeout` ve `completeOnTimeout`, `exceptionally`, `join`/`get` farkı, `thenApplyAsync` ve özel havuz | 10 | [`gun38`](src/main/java/com/semih/gunluk/gun38) |
+| 39 | Para ve kuruş dağıtımı | değer nesnesi olarak para, `Currency` ve kuruş hanesi, `BigDecimal` `equals` tuzağı, eşit ve oranlı paylaştırma (en büyük kalan), `HALF_EVEN` ile `HALF_UP` farkı, KDV ayırma, Türkçe para biçimi | 10 | [`gun39`](src/main/java/com/semih/gunluk/gun39) |
 
 ---
 
@@ -1462,6 +1463,33 @@ return ucus.thenCombine(otel, (u, of) -> new Paket(...));                       
 
 ---
 
+## Gün 39: Para (Kuruş kaybetmeden hesap)
+
+100 TL'yi üç kişiye bölünce 33,33 × 3 = 99,99 çıkıyor; bir kuruş kayboluyor. Faturada, taksitte ve masraf paylaşımında bu kuruşlar birikiyor. `Para` sınıfı tutar ve birimi birlikte taşıyor ve hiçbir işlemde kuruş kaybetmiyor.
+
+```java
+Para.tl("100").dagit(3);                         // [33.34, 33.33, 33.33]
+Para.tl("1000").oranlaDagit(List.of(50, 30, 20)); // [500.00, 300.00, 200.00]
+Para.tl("99.99").kdvAyir(20);                    // [83.33, 16.66]: toplamı yine 99.99
+Para.tl("10").topla(Para.of("10", "EUR"));        // FarkliParaBirimi: önce kurla çevir
+Para.tl("12.345");                                // IllegalArgumentException: en fazla 2 ondalık
+```
+
+**Neler öğrendim:**
+- **`BigDecimal.equals` tuzağı:** `10.5` ile `10.50` için `equals` false (ölçek farklı), `compareTo` 0. `Para` tutarı her zaman birimin kuruş hanesine çekiyor (`TRY` 2, `JPY` 0; `Currency.getDefaultFractionDigits()`), böylece `equals` doğru çalışıyor. Ölçeklemede `RoundingMode.UNNECESSARY`: yuvarlama gerekiyorsa sessizce kuruş atmak yerine hata.
+- **Kuruşla hesapla:** Paylaştırma tam sayı kuruş üzerinden: taban pay `floorDiv`, artan kuruşlar baştakilere birer birer. Altı farklı tutarda (eksi tutar dahil) toplamın aynı kaldığını ve payların en fazla 1 kuruş farklı olduğunu test ediyorum.
+- **En büyük kalan yöntemi:** Oranlı paylaştırmada herkes payının aşağı yuvarlanmışını alıyor, artan kuruşlar kesirli kısmı en büyük olanlara gidiyor.
+- **`HALF_EVEN` (bankacı yuvarlaması):** `HALF_UP` tam yarıları hep yukarı yuvarlıyor; 1.000 tane x,xx5 değerde toplam 5 TL fazla çıkıyor. `HALF_EVEN` yarıyı çift olana yuvarlıyor; hatalar birbirini götürüyor ve toplam hata 0.
+- **KDV'yi farktan hesapla:** Net tutar yuvarlanarak bulunuyor, KDV ise fiyat eksi net. İkisi ayrı ayrı yuvarlansaydı toplamları fiyattan bir kuruş sapabilirdi.
+- **Biçim yerele göre:** Türkçede `1.234,50`: binlik ayırıcı nokta, ondalık virgül. `NumberFormat.getCurrencyInstance(tr-TR)`; elle `String.format` yazmaya gerek yok.
+
+| Dosya | Görevi |
+|---|---|
+| `Para` | Tutar ve birim, toplama, çarpma, eşit ve oranlı paylaştırma, KDV ayırma, biçim |
+| `FarkliParaBirimi` | Farklı birimler birlikte kullanılınca hata |
+
+---
+
 ## Proje yapısı
 
 ```
@@ -1504,7 +1532,8 @@ src/
 │   ├── gun35/   Kitap, Odunc, Kutuphane, KutuphaneDosyasi, KomutYorumlayici, KutuphaneHatasi
 │   ├── gun36/   LogKaydi, LogAyristirici, LogAnalizi, Rapor, LogOkumaHatasi
 │   ├── gun37/   HizSinirlayici, SabitPencere, KayanPencere, JetonKovasi
-│   └── gun38/   SeyahatPlanlayici, UcusServisi, OtelServisi, KurServisi, Ucus, Otel, Paket, SeyahatBulunamadi
+│   ├── gun38/   SeyahatPlanlayici, UcusServisi, OtelServisi, KurServisi, Ucus, Otel, Paket, SeyahatBulunamadi
+│   └── gun39/   Para, FarkliParaBirimi
 └── test/java/com/semih/gunluk/
     ├── gun01/   BankaHesabiTest
     ├── gun02/   KelimeSayaciTest
@@ -1543,7 +1572,8 @@ src/
     ├── gun35/   KutuphaneTest, AyarlanabilirSaat
     ├── gun36/   LogAnaliziTest
     ├── gun37/   HizSinirlayiciTest, AyarlanabilirSaat
-    └── gun38/   SeyahatPlanlayiciTest
+    ├── gun38/   SeyahatPlanlayiciTest
+    └── gun39/   ParaTest
 ```
 
 Her yeni gün `gunNN` adında yeni bir paket olarak ekleniyor.

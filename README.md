@@ -53,6 +53,7 @@ Her gün bir Java alıştırması. Her günün kodu kendi paketinde, birim testl
 | 38 | Seyahat arama (CompletableFuture) | `thenCombine` ile paralel, `thenCompose` ile bağımlı çağrı, `allOf` ve `handle` ile kısmi sonuç, `anyOf`, `orTimeout` ve `completeOnTimeout`, `exceptionally`, `join`/`get` farkı, `thenApplyAsync` ve özel havuz | 10 | [`gun38`](src/main/java/com/semih/gunluk/gun38) |
 | 39 | Para ve kuruş dağıtımı | değer nesnesi olarak para, `Currency` ve kuruş hanesi, `BigDecimal` `equals` tuzağı, eşit ve oranlı paylaştırma (en büyük kalan), `HALF_EVEN` ile `HALF_UP` farkı, KDV ayırma, Türkçe para biçimi | 10 | [`gun39`](src/main/java/com/semih/gunluk/gun39) |
 | 40 | İş günleri ve saat dilimleri | iş günü ekleme ve sayma, `TemporalAdjuster` (sonraki iş günü, ayın son iş günü), sipariş kesim saati, `ZonedDateTime` ve `Instant`, yaz saati boşluğu ve çakışması, `Period` ile `Duration` farkı | 10 | [`gun40`](src/main/java/com/semih/gunluk/gun40) |
+| 41 | Unicode ve slug | başlıktan slug (Türkçe harfler, `Normalizer` ile aksan atma), kelime sınırında kesme, `length` / kod noktası / grafem / UTF-8 bayt farkı, emojiyi bölmeden kısaltma, NFC ve NFD, Türkçe büyük-küçük harf tuzakları, Unicode rakamları | 10 | [`gun41`](src/main/java/com/semih/gunluk/gun41) |
 
 ---
 
@@ -1521,6 +1522,38 @@ ToplantiPlanlayici.herkesIcin(an, List.of(ISTANBUL, NEW_YORK, LONDRA));
 
 ---
 
+## Gün 41: SlugUretici ve MetinOlcer (Unicode ve Türkçe metin)
+
+Blog yazısının başlığından URL'deki adı üretmek basit görünüyor, ama Türkçe harfler, aksanlar ve emojiler işin içine girince Java'daki "karakter" kavramının ne kadar karışık olduğu çıkıyor.
+
+```java
+SlugUretici.slug("Java'da Çoklu İş Parçacığı ve Senkronizasyon!", 80);
+// javada-coklu-is-parcacigi-ve-senkronizasyon
+SlugUretici.slug("Café & Crème Brûlée", 80);        // cafe-creme-brulee
+SlugUretici.slug("Merhaba 👋 Dünya 🌍", 80);         // merhaba-dunya
+SlugUretici.benzersiz("java-notlari", alinmislar);  // java-notlari-2
+
+"👍🏽".length();                       // 4  (UTF-16 birimi)
+"👍🏽".codePointCount(0, 4);            // 2  (başparmak + ten rengi)
+MetinOlcer.grafemSayisi("👍🏽");         // 1  (ekranda görünen)
+MetinOlcer.utf8Bayt("🌍");             // 4
+```
+
+**Neler öğrendim:**
+- **Slug sırası:** Önce Türkçe harfler elle çevriliyor, çünkü `ı` ayrıştırılınca `i`'ye dönmüyor, başka bir harf. Sonra `Normalizer.normalize(s, NFD)` harfi ve aksanı ayırıyor (`é` → `e` + `´`) ve `\p{M}` aksanları atıyor. Küçük harf `Locale.ROOT` ile, harf-rakam dışı her şey tireye, uzun slug kelime sınırında kesiliyor.
+- **Dört farklı uzunluk:** `length()` UTF-16 birimi sayıyor; emoji 2 birim. Ekranda tek görünen 👨‍👩‍👧 aslında görünmez birleştiricilerle (ZWJ) bağlanmış 5 kod noktası. Kullanıcının gördüğü birim "grafem"; `BreakIterator.getCharacterInstance()` sayıyor. Veritabanı sütun sınırı ise çoğu zaman bayt: `ğ` 2, `€` 3, emoji 4 bayt.
+- **Kısaltırken bölme:** `substring(0, 8)` "Merhaba👋" metninde emojinin yarısında kesiyor; ekranda `�` çıkıyor. Grafem sınırında kesen `kisalt` bunu yapmıyor.
+- **Aynı görünen farklı metin:** `é` tek kod noktası da olabilir, `e` + birleşen aksan da. Ekranda aynı, `equals` false. Karşılaştırmadan (ve kaydetmeden) önce `Normalizer.Form.NFC`.
+- **Türkçe harf tuzakları:** `"İSTANBUL".toLowerCase(Locale.ROOT)` noktalı `i̇` üretiyor (8 harf, 9 karakter); `"title".toUpperCase(tr)` `TİTLE` veriyor, teknik anahtarlarda (enum adı, HTTP başlığı) hata. `"sinir".equalsIgnoreCase("sınır")` true: farklı kelimeler eşit sayılıyor. Kural: kullanıcı metni için `tr-TR`, teknik değerler için `Locale.ROOT`.
+- **Rakam tuzağı:** `Integer.parseInt("٣")` (Arapça-Hint rakamı) 3 döndürüyor ve `Character.isDigit` true diyor, ama regex `\d` varsayılan olarak sadece 0-9. Kimlik ya da telefon doğrularken `[0-9]` açıkça yazılmalı.
+
+| Dosya | Görevi |
+|---|---|
+| `SlugUretici` | Başlıktan slug, kelime sınırında kesme, benzersiz slug |
+| `MetinOlcer` | Grafem sayısı, UTF-8 bayt, emojiyi bölmeden kısaltma (ve bilerek hatalı hâli) |
+
+---
+
 ## Proje yapısı
 
 ```
@@ -1565,7 +1598,8 @@ src/
 │   ├── gun37/   HizSinirlayici, SabitPencere, KayanPencere, JetonKovasi
 │   ├── gun38/   SeyahatPlanlayici, UcusServisi, OtelServisi, KurServisi, Ucus, Otel, Paket, SeyahatBulunamadi
 │   ├── gun39/   Para, FarkliParaBirimi
-│   └── gun40/   IsGunuTakvimi, ToplantiPlanlayici
+│   ├── gun40/   IsGunuTakvimi, ToplantiPlanlayici
+│   └── gun41/   SlugUretici, MetinOlcer
 └── test/java/com/semih/gunluk/
     ├── gun01/   BankaHesabiTest
     ├── gun02/   KelimeSayaciTest
@@ -1606,7 +1640,8 @@ src/
     ├── gun37/   HizSinirlayiciTest, AyarlanabilirSaat
     ├── gun38/   SeyahatPlanlayiciTest
     ├── gun39/   ParaTest
-    └── gun40/   TarihVeSaatDilimiTest
+    ├── gun40/   TarihVeSaatDilimiTest
+    └── gun41/   UnicodeTest
 ```
 
 Her yeni gün `gunNN` adında yeni bir paket olarak ekleniyor.

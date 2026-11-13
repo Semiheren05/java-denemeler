@@ -48,6 +48,7 @@ Her gün bir Java alıştırması. Her günün kodu kendi paketinde, birim testl
 | 33 | Kural motoru | hazır fonksiyonel arayüzler: `Predicate` (`and`, `or`, `negate`, `not`, kısa devre), `Function` (`andThen`, `compose`), `UnaryOperator` zinciri, `BiFunction`, `Consumer.andThen`; kuralları veri olarak tutmak | 10 | [`gun33`](src/main/java/com/semih/gunluk/gun33) |
 | 34 | Banka transferi | `ReentrantLock`, deadlock'u testle göstermek (`ThreadMXBean.findDeadlockedThreads`), kilit sırasıyla önlemek, `tryLock` ile süreli deneme, `lockInterruptibly`, `Condition` ile bekleme, eşzamanlı yükte toplam paranın korunması | 10 | [`gun34`](src/main/java/com/semih/gunluk/gun34) |
 | 35 | Kütüphane yönetimi (mini proje) | OOP, `Collection`, Stream (`groupingBy`, sıralama), `Optional`, `java.time` ve `Clock`, gecikme cezası (`BigDecimal`), dosyaya kaydetme ve yükleme, test edilebilir konsol komutları | 10 | [`gun35`](src/main/java/com/semih/gunluk/gun35) |
+| 36 | Log analizcisi | `Files.lines` ile tembel okuma, regex adlı grupları, bozuk satırları saymak, yolu normalleştirmek (`/posts/12` → `/posts/{id}`), saatlik hata sayısı (`TreeMap`), p95 süre, `findFirst` ile erken durmak | 10 | [`gun36`](src/main/java/com/semih/gunluk/gun36) |
 
 ---
 
@@ -1347,6 +1348,42 @@ konsol.calistir("iade 111");       // İade alındı, ceza 10 TL
 
 ---
 
+## Gün 36: LogAnalizi (Büyük log dosyasını okumak)
+
+Bir erişim logundan rapor: kaç istek, kaç bozuk satır, saat saat sunucu hataları, en yavaş uç noktalar.
+
+```text
+2026-11-12T10:05:00.000Z ERROR [http-3] POST /api/contact 503 1200ms
+java.net.SocketTimeoutException: Read timed out          ← bozuk satır, sayılıp atlanıyor
+2026-11-12T10:30:00.000Z INFO  [http-1] GET /api/posts/7?sayfa=2 200 60ms
+```
+
+```java
+Rapor r = LogAnalizi.analizEt(Path.of("erisim.log"), 3);
+r.kayit();            // 7
+r.bozukSatir();       // 3
+r.saatlikHatalar();   // {2026-11-12T10:00=1, 2026-11-12T11:00=2}
+r.enYavaslar();       // [POST /api/contact=1200, GET /api/posts/{id}=300]   (p95, ms)
+r.durumSiniflari();   // {2xx=3, 4xx=1, 5xx=3}
+```
+
+**Neler öğrendim:**
+- **Tembel okuma:** `Files.lines` dosyayı satır satır okuyan bir akış; bellekte bir anda tek satır var. `Files.readAllLines` 2 GB'lık bir logda belleği bitirir. Akış bir dosya tuttuğu için try-with-resources ile kapatılıyor. İlk sunucu hatasını arayan `findFirst`, 50.003 satırlık dosyada 3. satırda buldu ve kalanını hiç okumadı (`peek` sayacıyla test).
+- **Regex adlı grupları:** `(?<durum>\d{3})` ve `m.group("durum")`; sütunların yeri değişse kod okunur kalıyor. Desen `static final`: her satırda yeniden derlenmiyor. Uymayan satır istisna değil, boş `Optional`.
+- **Yolu normalleştirmek:** `/api/posts/12` ve `/api/posts/7?sayfa=2` aynı uç nokta: sorgu dizesi atılıyor, sayı olan parçalar `{id}` oluyor. Yoksa 200.000 farklı yol 200.000 ayrı satır olurdu.
+- **Ortalama değil p95:** Ortalama, tek bir çok yavaş isteği binlerce hızlı isteğin içinde gizliyor. p95 "isteklerin %95'i bu süreden kısa" demek; "en yakın sıra" yöntemiyle sıralı listenin ⌈0,95·n⌉. elemanı.
+- **Sıralı gruplama:** `groupingBy(..., TreeMap::new, counting())` saatleri zamana göre sıralı veriyor; `truncatedTo(ChronoUnit.HOURS)` saat başına yuvarlıyor.
+
+| Dosya | Görevi |
+|---|---|
+| `LogKaydi` | Ayrıştırılmış satır (`record`) |
+| `LogAyristirici` | Regex ile ayrıştırma, yol normalleştirme |
+| `LogAnalizi` | Tembel okuma, rapor, ilk hata, yüzdelik |
+| `Rapor` | Toplamlar, saatlik hatalar, en yavaşlar, durum sınıfları (`record`) |
+| `LogOkumaHatasi` | Okuma hatası, asıl sebebi `cause`'da |
+
+---
+
 ## Proje yapısı
 
 ```
@@ -1386,7 +1423,8 @@ src/
 │   ├── gun32/   Musteri, Adres, MusteriDeposu, KargoAdresi, MusteriBulunamadi
 │   ├── gun33/   Basvuru, Kural, Karar, KuralMotoru, KrediKurallari
 │   ├── gun34/   Hesap, TransferServisi, HataliTransferServisi, YetersizBakiye
-│   └── gun35/   Kitap, Odunc, Kutuphane, KutuphaneDosyasi, KomutYorumlayici, KutuphaneHatasi
+│   ├── gun35/   Kitap, Odunc, Kutuphane, KutuphaneDosyasi, KomutYorumlayici, KutuphaneHatasi
+│   └── gun36/   LogKaydi, LogAyristirici, LogAnalizi, Rapor, LogOkumaHatasi
 └── test/java/com/semih/gunluk/
     ├── gun01/   BankaHesabiTest
     ├── gun02/   KelimeSayaciTest
@@ -1422,7 +1460,8 @@ src/
     ├── gun32/   OptionalTest
     ├── gun33/   KuralMotoruTest
     ├── gun34/   TransferTest
-    └── gun35/   KutuphaneTest, AyarlanabilirSaat
+    ├── gun35/   KutuphaneTest, AyarlanabilirSaat
+    └── gun36/   LogAnaliziTest
 ```
 
 Her yeni gün `gunNN` adında yeni bir paket olarak ekleniyor.

@@ -50,6 +50,7 @@ Her gün bir Java alıştırması. Her günün kodu kendi paketinde, birim testl
 | 35 | Kütüphane yönetimi (mini proje) | OOP, `Collection`, Stream (`groupingBy`, sıralama), `Optional`, `java.time` ve `Clock`, gecikme cezası (`BigDecimal`), dosyaya kaydetme ve yükleme, test edilebilir konsol komutları | 10 | [`gun35`](src/main/java/com/semih/gunluk/gun35) |
 | 36 | Log analizcisi | `Files.lines` ile tembel okuma, regex adlı grupları, bozuk satırları saymak, yolu normalleştirmek (`/posts/12` → `/posts/{id}`), saatlik hata sayısı (`TreeMap`), p95 süre, `findFirst` ile erken durmak | 10 | [`gun36`](src/main/java/com/semih/gunluk/gun36) |
 | 37 | Hız sınırlayıcı | sabit pencere ve sınırdaki açığı, kayan pencere, jeton kovası ve tembel dolum, `Retry-After` süresi, `ConcurrentHashMap.compute` ile atomik güncelleme, `Clock` ile test | 10 | [`gun37`](src/main/java/com/semih/gunluk/gun37) |
+| 38 | Seyahat arama (CompletableFuture) | `thenCombine` ile paralel, `thenCompose` ile bağımlı çağrı, `allOf` ve `handle` ile kısmi sonuç, `anyOf`, `orTimeout` ve `completeOnTimeout`, `exceptionally`, `join`/`get` farkı, `thenApplyAsync` ve özel havuz | 10 | [`gun38`](src/main/java/com/semih/gunluk/gun38) |
 
 ---
 
@@ -1418,6 +1419,49 @@ if (!kova.izinVer(istemciIp)) {
 
 ---
 
+## Gün 38: SeyahatPlanlayici (CompletableFuture ile birleştirme)
+
+Gün 13'te `CompletableFuture`'ın temelleri vardı; bu gün birden fazla dış servisi birleştirmek. Bir seyahat paketi için uçuş, otel ve döviz kuru gerekiyor. Uçuş ile otel birbirinden bağımsız, kur ise otelin para birimine bağlı.
+
+```text
+havayolları (aynı anda) ─► en ucuz uçuş ─────────────────┐
+otel ─► (para birimi belli olunca) kur ─► otelin TL fiyatı ┴─► paket
+```
+
+```java
+CompletableFuture<Ucus> ucus = enUcuzUcus(nereden, nereye);
+CompletableFuture<OtelFiyati> otel = oteller.ara(nereye)
+        .thenCompose(o -> kurlar.tlKarsiligi(o.paraBirimi())                    // bağımlı: sıralı
+                .thenApply(kur -> new OtelFiyati(o, o.geceFiyati().multiply(kur).multiply(BigDecimal.valueOf(gece)))));
+return ucus.thenCombine(otel, (u, of) -> new Paket(...));                       // bağımsız: paralel
+```
+
+| Metot | Ne yapar |
+|---|---|
+| `thenApply` | Sonucu dönüştürür |
+| `thenCompose` | Sonuçla yeni bir asenkron çağrı başlatır, iç içe future'ı düzleştirir |
+| `thenCombine` | İki bağımsız sonucu birleştirir |
+| `allOf` / `anyOf` | Hepsini / ilk geleni bekler |
+| `handle` / `exceptionally` | Hatayı değere çevirir |
+| `orTimeout` / `completeOnTimeout` | Süre dolunca hata / yedek değer |
+
+**Neler öğrendim:**
+- **Paralel ve sıralı:** Her servis 400 ms sürüyorsa paket 800 ms'de çıkıyor (uçuş ve otel aynı anda, kur otelden sonra); hepsi sırayla olsa 1.200 ms. Testte süreyi ölçüyorum.
+- **Kısmi sonuç:** Havayollarından biri 503 verse de arama çökmüyor: her cevaba `handle` ile "hata varsa `null`" deniyor, `allOf` bitince `null`'lar atılıp en ucuzu seçiliyor. Hepsi çökerse anlamlı bir `SeyahatBulunamadi`.
+- **Zaman aşımı:** `orTimeout` süre dolunca `TimeoutException` ile bitiriyor; `completeOnTimeout` hata yerine son bilinen kuru veriyor.
+- **Hata zincirde atlıyor:** Hata olunca aradaki `thenApply` adımları hiç çalışmıyor, ilk `exceptionally`'ye kadar atlanıyor.
+- **`join` ile `get`:** Aynı hatayı `join` `CompletionException` (unchecked), `get` `ExecutionException` (checked) içine sarıyor; asıl hata ikisinde de `getCause()`.
+- **Hangi thread:** `thenApplyAsync(fn, havuz)` işi verilen havuzda çalıştırıyor. Havuz verilmezse ortak `ForkJoinPool`; bloklayan dış çağrılar için ayrı havuz daha doğru. Sahte servisler `delayedExecutor` ile gecikiyor; beklerken thread tutmuyor.
+
+| Dosya | Görevi |
+|---|---|
+| `SeyahatPlanlayici` | Paket, en ucuz uçuş, ilk cevap, zaman aşımı, hata kurtarma |
+| `UcusServisi`, `OtelServisi`, `KurServisi` | Dış servis arayüzleri, `CompletableFuture` döndürüyor |
+| `Ucus`, `Otel`, `Paket` | Veriler (`record`) |
+| `SeyahatBulunamadi` | Hiç uçuş yoksa hata |
+
+---
+
 ## Proje yapısı
 
 ```
@@ -1459,7 +1503,8 @@ src/
 │   ├── gun34/   Hesap, TransferServisi, HataliTransferServisi, YetersizBakiye
 │   ├── gun35/   Kitap, Odunc, Kutuphane, KutuphaneDosyasi, KomutYorumlayici, KutuphaneHatasi
 │   ├── gun36/   LogKaydi, LogAyristirici, LogAnalizi, Rapor, LogOkumaHatasi
-│   └── gun37/   HizSinirlayici, SabitPencere, KayanPencere, JetonKovasi
+│   ├── gun37/   HizSinirlayici, SabitPencere, KayanPencere, JetonKovasi
+│   └── gun38/   SeyahatPlanlayici, UcusServisi, OtelServisi, KurServisi, Ucus, Otel, Paket, SeyahatBulunamadi
 └── test/java/com/semih/gunluk/
     ├── gun01/   BankaHesabiTest
     ├── gun02/   KelimeSayaciTest
@@ -1497,7 +1542,8 @@ src/
     ├── gun34/   TransferTest
     ├── gun35/   KutuphaneTest, AyarlanabilirSaat
     ├── gun36/   LogAnaliziTest
-    └── gun37/   HizSinirlayiciTest, AyarlanabilirSaat
+    ├── gun37/   HizSinirlayiciTest, AyarlanabilirSaat
+    └── gun38/   SeyahatPlanlayiciTest
 ```
 
 Her yeni gün `gunNN` adında yeni bir paket olarak ekleniyor.

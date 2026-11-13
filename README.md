@@ -44,6 +44,7 @@ Her gün bir Java alıştırması. Her günün kodu kendi paketinde, birim testl
 | 29 | Kalıtım mı bileşim mi | `abstract class` ile `interface` farkı, şablon metot, `protected` kanca, `default` metot, kırılgan üst sınıf (`HashSet` sayacı), bileşim ve iletme, Liskov ihlali (`Stack`) | 10 | [`gun29`](src/main/java/com/semih/gunluk/gun29) |
 | 30 | Refactoring katası | kod kokuları, karakterizasyon testi (sabit tohumlu 1.000 rastgele sipariş), ilkel takıntısını `enum` ve `record` ile çözmek, parametre nesnesi, erken dönüş, açık/kapalı ilkesi (kupon arayüzü), `double` yerine `BigDecimal` | 10 | [`gun30`](src/main/java/com/semih/gunluk/gun30) |
 | 31 | Singleton ve doğru yazımları | `enum` singleton (yansıma ve serileştirmeye dayanıklı), holder deyimiyle tembel kurulum, `CyclicBarrier` ile yarışı göstermek, çift kontrollü kilit ve `volatile`, küresel durum sorunu, bağımlılık enjeksiyonu | 10 | [`gun31`](src/main/java/com/semih/gunluk/gun31) |
+| 32 | Optional'ın doğru kullanımı | iç içe `null` kontrolü yerine `map`/`flatMap`/`filter` zinciri, `orElse` ile `orElseGet` farkı (sayaçla), `orElseThrow`, `or`, `Optional::stream`, `OptionalInt`, alan ve parametrede neden kullanılmaz | 10 | [`gun32`](src/main/java/com/semih/gunluk/gun32) |
 
 ---
 
@@ -1175,6 +1176,47 @@ private static volatile CiftKontrolluTekil ornek;
 
 ---
 
+## Gün 32: KargoAdresi (Optional'ın doğru ve yanlış kullanımı)
+
+"Müşterinin kargo şehri ne?" sorusu dört yerde boş kalabilir: müşteri yok, adresi yok, şehir `null`, şehir boşluk. Aynı soru iki yazımla:
+
+```java
+// Önce: iç içe null kontrolleri
+Musteri musteri = depo.bulYaDaNull(id);
+if (musteri != null) {
+    Adres adres = musteri.adresYaDaNull();
+    if (adres != null) {
+        String sehir = adres.sehir();
+        if (sehir != null && !sehir.isBlank()) return sehir;
+    }
+}
+return BILINMIYOR;
+
+// Sonra: Optional zinciri
+return depo.bul(id)
+        .flatMap(Musteri::adres)        // adres() de Optional döndürüyor: flatMap
+        .map(Adres::sehir)              // sehir() düz değer: map (null dönerse boş Optional olur)
+        .filter(sehir -> !sehir.isBlank())
+        .orElse(BILINMIYOR);
+```
+
+**Neler öğrendim:**
+- **`map` ile `flatMap`:** Adım düz bir değer döndürüyorsa `map`, `Optional` döndürüyorsa `flatMap`. `map` içinde `null` dönen bir adım zinciri kırmıyor, boş `Optional`'a çeviriyor. Eski ve yeni yazımın beş durumda aynı sonucu verdiğini test ediyorum.
+- **`orElse` ile `orElseGet`:** `orElse(varsayilan())` argümanı Optional dolu olsa bile hesaplıyor; varsayılan bir veritabanı sorgusuysa boşuna çalışıyor. `orElseGet(() -> varsayilan())` sadece boşken. Testte bir sayaçla kanıtladım: dolu Optional'da `orElse` 1 kez üretti, `orElseGet` hiç.
+- **Bulunamamak hata ise:** `orElseThrow(() -> new MusteriBulunamadi(id))`. Kontrolsüz `get()` aynı işi anlamsız bir `NoSuchElementException` ile yapıyor.
+- **`or` ve `stream`:** `onbellek.or(() -> depo.bul(id))` önbellek doluysa depoya hiç gitmiyor. `.flatMap(Optional::stream)` bir id listesinden bulunamayanları atıp bulunanları açıyor.
+- **Nerede kullanılmaz:** `Optional` dönüş tipi için. Alan, parametre ya da koleksiyon elemanı olarak kullanılmıyor. `Musteri` alanı düz (null olabilir) tutuyor, dışarıya `Optional<Adres> adres()` veriyor. `Optional` döndüren bir metodun `null` döndürmesi en kötüsü: çağıran `isPresent()` derken `NullPointerException` alıyor. İlkel değer için `OptionalInt`, kutulama yok.
+
+| Dosya | Görevi |
+|---|---|
+| `Musteri` | Alan düz, erişim `Optional` |
+| `Adres` | Şehir ve posta kodu (`record`, kirli veri olabilir) |
+| `MusteriDeposu` | `bul` (Optional), eski stil `bulYaDaNull`, bilerek hatalı `hataliBul` |
+| `KargoAdresi` | Eski ve yeni yazım, `orElseThrow`, `or`, `stream`, `OptionalInt` |
+| `MusteriBulunamadi` | Bulunamama hatası |
+
+---
+
 ## Proje yapısı
 
 ```
@@ -1210,7 +1252,8 @@ src/
 │   ├── gun28/   Sepet, SepetIslemleri, HataliKampanya, Kampanya, Ozyineleme
 │   ├── gun29/   Hesap, VadesizHesap, VadeliHesap, FaizGetiren, HataliSayanKume, SayanKume
 │   ├── gun30/   eski/SiparisHesaplayici, yeni/(SiparisHesaplayici, Siparis, SiparisKalemi, Kategori, MusteriTipi, Kupon, KargoUcreti, Fiyatlandirma)
-│   └── gun31/   Ayarlar, TembelTekil, HataliTekil, CiftKontrolluTekil, GlobalSayac, NumaraUretici, SiraliNumaraUretici, SiparisNumaralari
+│   ├── gun31/   Ayarlar, TembelTekil, HataliTekil, CiftKontrolluTekil, GlobalSayac, NumaraUretici, SiraliNumaraUretici, SiparisNumaralari
+│   └── gun32/   Musteri, Adres, MusteriDeposu, KargoAdresi, MusteriBulunamadi
 └── test/java/com/semih/gunluk/
     ├── gun01/   BankaHesabiTest
     ├── gun02/   KelimeSayaciTest
@@ -1242,7 +1285,8 @@ src/
     ├── gun28/   BellekTest
     ├── gun29/   KalitimVeBilesimTest
     ├── gun30/   RefactoringTest
-    └── gun31/   TekilTest
+    ├── gun31/   TekilTest
+    └── gun32/   OptionalTest
 ```
 
 Her yeni gün `gunNN` adında yeni bir paket olarak ekleniyor.

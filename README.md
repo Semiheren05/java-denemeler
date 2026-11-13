@@ -47,6 +47,7 @@ Her gün bir Java alıştırması. Her günün kodu kendi paketinde, birim testl
 | 32 | Optional'ın doğru kullanımı | iç içe `null` kontrolü yerine `map`/`flatMap`/`filter` zinciri, `orElse` ile `orElseGet` farkı (sayaçla), `orElseThrow`, `or`, `Optional::stream`, `OptionalInt`, alan ve parametrede neden kullanılmaz | 10 | [`gun32`](src/main/java/com/semih/gunluk/gun32) |
 | 33 | Kural motoru | hazır fonksiyonel arayüzler: `Predicate` (`and`, `or`, `negate`, `not`, kısa devre), `Function` (`andThen`, `compose`), `UnaryOperator` zinciri, `BiFunction`, `Consumer.andThen`; kuralları veri olarak tutmak | 10 | [`gun33`](src/main/java/com/semih/gunluk/gun33) |
 | 34 | Banka transferi | `ReentrantLock`, deadlock'u testle göstermek (`ThreadMXBean.findDeadlockedThreads`), kilit sırasıyla önlemek, `tryLock` ile süreli deneme, `lockInterruptibly`, `Condition` ile bekleme, eşzamanlı yükte toplam paranın korunması | 10 | [`gun34`](src/main/java/com/semih/gunluk/gun34) |
+| 35 | Kütüphane yönetimi (mini proje) | OOP, `Collection`, Stream (`groupingBy`, sıralama), `Optional`, `java.time` ve `Clock`, gecikme cezası (`BigDecimal`), dosyaya kaydetme ve yükleme, test edilebilir konsol komutları | 10 | [`gun35`](src/main/java/com/semih/gunluk/gun35) |
 
 ---
 
@@ -1307,6 +1308,45 @@ if (!kaynak.kilit().tryLock(200, TimeUnit.MILLISECONDS)) return false;
 
 ---
 
+## Gün 35: Kutuphane (Mini proje: kütüphane yönetimi)
+
+Önceki günlerin konularını bir arada kullanan küçük bir uygulama: ödünç alma, iade, gecikme cezası, raporlar, dosyaya kaydetme ve konsol komutları.
+
+| Kural | Değer |
+|---|---|
+| Ödünç süresi | 14 gün |
+| Üye başına | en fazla 3 kitap |
+| Uzatma | bir kez, 7 gün; gecikmişse olmaz |
+| Gecikmiş kitabı olan | yeni kitap alamaz |
+| Ceza | günde 5 TL, en fazla 100 TL |
+
+```java
+KomutYorumlayici konsol = new KomutYorumlayici(kutuphane);
+konsol.calistir("ver 111 U1");     // Verildi, son teslim 2026-11-16
+konsol.calistir("ver 111 U2");     // Hata: 'Tutunamayanlar' şu an başka bir üyede
+// 16 gün sonra
+konsol.calistir("geciken");        // Gecikenler: [111 U1]
+konsol.calistir("iade 111");       // İade alındı, ceza 10 TL
+```
+
+**Neler öğrendim:**
+- **Zaman dışarıdan:** `Kutuphane` "bugün"ü `Clock`'tan alıyor. Testte saati günlerce ileri sarıp ceza, uzatma ve gecikme kurallarını saniyesinde deniyorum (Gün 9'daki ders).
+- **Değiştirilemez kayıt:** `Odunc` bir `record`; iade ve uzatma yeni bir kayıt üretiyor (`iadeEdildi`, `uzatildi`). Kayıt geçmişi bozulmuyor.
+- **Raporlar Stream ile:** En çok okunan yazarlar `groupingBy` + `counting`, sonra sayıya göre azalan ve eşitlikte ada göre sıralama. Gecikenler en çok geciken önce.
+- **Dosya biçimi:** Her satırın başında türünü söyleyen bir etiket (`K;...`, `O;...`). `split(";", -1)`: `-1` olmazsa sondaki boş alan (henüz iade yok) atılıyor ve satır kısa kalıyor. Ayırıcı `;` kitap adında olursa dosya bozulacağı için `Kitap` bunu kurarken reddediyor. Kaydedip geri yükleyince her şeyin aynı olduğunu `@TempDir` ile test ediyorum.
+- **Konsol test edilebilir:** `Scanner` döngüsü sadece satır okuyup `calistir`'a veriyor; asıl iş bir `String` alıp `String` döndüren metotta. Hatalar istisna olarak değil, kullanıcıya gösterilecek mesaj olarak dönüyor.
+
+| Dosya | Görevi |
+|---|---|
+| `Kitap` | ISBN, ad, yazar (`record`, ayırıcı kontrolü) |
+| `Odunc` | Ödünç kaydı, gecikme günü (`record`) |
+| `Kutuphane` | Kurallar, ceza, uzatma, raporlar |
+| `KutuphaneDosyasi` | Metin dosyasına kaydetme ve yükleme |
+| `KomutYorumlayici` | `ver`, `iade`, `geciken` komutları |
+| `KutuphaneHatasi` | Kural ihlali hatası |
+
+---
+
 ## Proje yapısı
 
 ```
@@ -1345,7 +1385,8 @@ src/
 │   ├── gun31/   Ayarlar, TembelTekil, HataliTekil, CiftKontrolluTekil, GlobalSayac, NumaraUretici, SiraliNumaraUretici, SiparisNumaralari
 │   ├── gun32/   Musteri, Adres, MusteriDeposu, KargoAdresi, MusteriBulunamadi
 │   ├── gun33/   Basvuru, Kural, Karar, KuralMotoru, KrediKurallari
-│   └── gun34/   Hesap, TransferServisi, HataliTransferServisi, YetersizBakiye
+│   ├── gun34/   Hesap, TransferServisi, HataliTransferServisi, YetersizBakiye
+│   └── gun35/   Kitap, Odunc, Kutuphane, KutuphaneDosyasi, KomutYorumlayici, KutuphaneHatasi
 └── test/java/com/semih/gunluk/
     ├── gun01/   BankaHesabiTest
     ├── gun02/   KelimeSayaciTest
@@ -1380,7 +1421,8 @@ src/
     ├── gun31/   TekilTest
     ├── gun32/   OptionalTest
     ├── gun33/   KuralMotoruTest
-    └── gun34/   TransferTest
+    ├── gun34/   TransferTest
+    └── gun35/   KutuphaneTest, AyarlanabilirSaat
 ```
 
 Her yeni gün `gunNN` adında yeni bir paket olarak ekleniyor.
